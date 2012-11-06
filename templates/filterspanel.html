@@ -1,0 +1,93 @@
+{% if filter_opts %}
+
+<div class="page-header">
+	<h2 class="heading">Filters to fix bad outputs</h2>
+</div>
+
+<script type="text/javascript">
+function filter_click(clauseid, query, where, data, labels) {
+	console.log("filter_click\t" + clauseid )
+	$(".btn-clause").removeClass('btn-success');
+	$("#clause_filter_" + clauseid + " pre").addClass('btn-success');
+	update_query(query);
+	renderagg.render_scatter(data, labels);
+	global_state.filter = where;
+	global_state.clauseid = clauseid;
+	update_tupleplot();
+}
+</script>
+
+<div id="clause_filter_orig">
+		<pre class="btn btn-clause btn-success">Original Query</pre>
+</div>
+<script type="text/javascript">
+	$("#clause_filter_orig").click(function(){
+		filter_click("orig",  global_state.original_query, "", data, labels);
+	});
+</script>
+
+
+<!--
+<style>
+.nav li a {
+	margin-left: 3em;
+}
+.nav-header:hover {
+	pointer: cursor;
+	background: whiteSmoke;
+}
+</style>
+<ul class="nav nav-pills nav-stacked">
+	<li class="nav-header">Circle 1</li>
+	<li><a href="#">x</a></li>
+	<li><a href="#">y</a></li>
+	<li><a href="#">size</a></li>
+	<li><a href="#">color</a></li>
+
+	<li class="nav-header">Circle 2</li>
+	<li><a href="#">x</a></li>
+	<li><a href="#">y</a></li>
+	<li><a href="#">size</a></li>
+	<li><a href="#">color</a></li>
+</ul>
+-->
+
+{% if not filter_opts %}
+
+{% endif %}
+
+{% for label, clauses in filter_opts %}
+	{% if clauses|length > 0 %}
+		<h2>{{label}}</h2>
+		{% for clause, cquery, cwhere, cdata, idx in clauses %}
+			<div class="filter-clause" id="clause_{{idx}}">{{clause}}</div>
+			<div id="clause_filter_{{idx}}"><pre class="btn btn-clause">Filter</pre></div>
+			<script type="text/javascript">
+			(function(){
+				var _query = "{{cquery|safe}}";
+				var _idx = "{{idx}}";
+				var _where = "{{cwhere|safe}}";
+				var cb_func = function(_resp) {	
+					var _data = _resp.data,
+						_labels = _resp.labels;
+					$("#tab-aggplot .heading small").text('rendering...');
+					filter_click(_idx, _query, _where, _data, _labels);
+					$("#tab-aggplot .heading small").empty();
+				};
+				
+				$("#clause_filter_{{idx}}").click(function() {
+					$("#tab-aggplot .heading small").text('loading...');
+					get_aggdata(_query, _idx, _where, cb_func);
+				});
+				get_aggdata(_query, _idx, _where);
+			})();
+
+			</script>
+		{% endfor %}
+	{% endif %}
+{% endfor %}
+
+
+
+
+{% endif %}

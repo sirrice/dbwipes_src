@@ -1,0 +1,78 @@
+<fieldset>
+<!--<legend>Choose a Database</legend>-->
+<div class="control-group">
+	<label class="control-label" for="dbname">Choose a Database</label>
+	<div class="controls">
+		<select id="dbselect" class="input-xlarge" name="db">
+			<option value="intel" {% if g.dbname == 'intel' %}selected="selected"{% endif %}>
+				Intel Sensor Dataset
+			</option>
+			<option value="fec12"  {% if g.dbname == 'fec12' %}selected="selected"{% endif %}>
+				FEC Presidential Campaign Dataset
+			</option>
+			<!--<option value="mattdata"  {% if g.dbname == 'mattdata' %}selected="selected"{% endif %}>
+				PartNews Dataset
+			</option>			-->
+		</select>
+		<a class="btn-small" id="btn_schema" href="#">show schema</a>
+	</div>
+</div>
+</fieldset>
+
+<fieldset id="fs_schema" loaded="no" loading="false" style="display:none; height: 400px; overflow-y:scroll; font-size:9pt;" >
+</fieldset>
+
+
+
+<script type="text/javascript">
+$("#dbselect").change(function() {
+	var dbname = $("#dbselect option:selected").val()
+	global_state.db = dbname;
+	d3.select("#fs_schema").attr("loaded", "no").attr("loading", "false")
+	$("#btn_schema").click().click();
+
+	render_canned_queries(dbname);
+})
+
+
+
+$(function() {
+	render_canned_queries($("#dbselect option:selected").val());
+	if ($("#query").text().match(/^\s+$/)) {
+		$("#ql-container button:first").click();
+	}
+})
+</script>
+
+<script>
+// schema loader
+(function(){
+	var _showing = false;
+	var fsdiv = d3.select("#fs_schema");
+	$("#btn_schema").click(function(){
+		_showing = !_showing;
+		if (fsdiv.attr("loaded") === "no") {
+			if (fsdiv.attr("loading") == "true") return;
+			fsdiv.attr("loading", "true");
+			$.post('/json/schema/', {db:global_state.db}, function(schema){
+
+					render_schema("#fs_schema", schema);
+					if (_showing)
+						$("#fs_schema").slideDown();
+					else
+						$("#fs_schema").slideUp();
+					fsdiv.attr("loaded", "yes");
+
+			}, 'json')
+		} else {
+			console.log(_showing);
+			if (_showing)
+				$("#fs_schema").slideDown();
+			else
+				$("#fs_schema").slideUp();
+		}
+
+	});
+})();
+
+</script>

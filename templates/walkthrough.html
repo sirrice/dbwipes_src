@@ -1,0 +1,186 @@
+
+
+<div id="walkthrough-popover" class="popover right in" style="">
+	<div class="arrow"></div>
+	<div class="popover-inner">
+		<div class="popover-title">
+			<h3>DBWipes
+			<button class="close" style="">x</button></h3>
+		</div>
+		<div class="popover-content" id="walkthrough-container" style="position:relative; ">
+
+
+
+		
+			<form id='errorbox' class="form-horizontal" action='/debug/' method='POST'>
+			<fieldset>
+
+
+				<div class="block" id="walkthrough-0">
+					<div class='control-group'>
+						<label class="control-label" for="errortypes">
+								Selected outputs are
+						</label>
+						<div class="controls">
+							<span id="sb_addbad" class="btn btn-danger" style="width: 85%; display:block;">
+								bad outputs
+							</span>
+							<span id="sb_addgood" class="btn btn-primary" style="width: 85%; display:block;">
+								good outputs
+							</span>
+							<div style="clear:both"></div>
+						</div>
+					</div>
+				</div>			
+
+
+
+
+
+				<div class="block" id="walkthrough-1">
+					<div class="control-group">
+						<label class="control-label" for="errortypes">
+							The bad outputs are
+						</label>
+						<div class="controls">
+							<label class="radio"><input type="radio" name="errtype" {% if errtype == '0' %}checked{% endif %} value="0">Wrong.</label>
+						<!--	<label class="radio inline" style="margin-right: 10px;">
+								<input type="radio" name="errtype" {% if errtype == '1' %}checked{% endif %} value="1">Should be equal to
+							</label> <input class="inline" name="erreq" value="{{endeq}}" style=""/>-->
+							<label class="radio"><input type="radio" name="errtype" {% if errtype == '2' %}checked{% endif %} value="2">Too High</label>
+							<label class="radio"><input type="radio" name="errtype" {% if errtype == '3' %}checked{% endif %} value="3">Too Low</label>
+						</div>
+					</div>
+				</div>
+
+
+				<div class="block" id="walkthrough-2">
+					<div class="control-group">
+						<label class="control-label">
+							Analyze these attributes
+						</label>
+						<div class="controls">
+							<div>
+						{% for attrname, type, checked in result_schema %}
+
+							<label class="checkbox">
+								<input type="checkbox" {%if checked%}checked{%endif%} class="errattrs" id="errattrs_{{attrname}}" value="{{attrname}}"/>
+								<div class="row">
+								<div class="span2">{{attrname}}</div>
+								<div class="span1">{{type}}</div>
+								</div>
+							</label>
+
+						{% endfor %}
+							</div>
+						</div>
+					</div>
+				</div>
+
+
+				<textarea style="display:none;" id="errbox_query" name="query">{{query|safe}}</textarea>
+				<input type="hidden" id="errbox_errids" name="bad_tuple_ids" value="{}"/>	
+				<input type="hidden" id="errbox_val" name="data" value="{}"/>
+				<input type="hidden" id="errbox_goodkeys" name="goodkeys" value="{}"/>
+				<input type="hidden" id="errbox_db" name="db" value="intel"/>
+				<input type="hidden" id="errbox_attrs" name="attrs" value="[]"/>
+
+
+				<div class='form-actions'>
+					<input type="submit" id="errbox_submit" class="btn btn-primary" value="Debug Highlighted Points!" style="float:right;"></input>
+					<button id="errbox_prev" disabled='disabled' class="btn" style="float:right; width: 7em" >
+						Previous
+					</button>
+
+					<div style="clear:both"></div>
+				</div>
+
+
+
+
+
+
+			</fieldset>
+			</form>
+
+		</div>
+	</div>
+</div>
+
+
+{% raw %}
+
+<script id="formstatus-template" type="text/x-handlebars-template">
+{{#if nbad}}
+<h3 id="fs-bad">
+	{{nbad}} 
+	<small>bad outputs selected</small>
+	<a href="#" id="fs-reset-bad"><small>x</small></a>
+</h3>
+{{/if}}
+
+{{#if ngood}}
+<h3 id="fs-good">
+	{{ngood}} 
+	<small>good outputs selected</small>
+	<a href="#" id="fs-reset-good"><small>x</small></a>
+</h3>
+{{/if}}
+
+{{#if errtype}}
+<h3 id="fs-errtype">
+	<small>The value of the bad outputs are</small> {{errtype}}
+	<a href="#" id="fs-reset-errtype"><small>x</small></a>	
+</h3>
+{{/if}}
+
+{{#if errattrs}}
+	<h3><small>Predicates containing these attributes will be considered:</small>
+	{{#each errattrs}}<span>{{this}}</span>{{/each}}
+	</h3>
+{{/if}}
+
+</script>
+
+{% endraw %}
+
+<!--
+<script type="text/javascript">
+$("#sb_err").click(function() {
+    $('#link-tupplot').tab('show');
+    update_tupleplot();
+})
+$("#sb_addbad").click(function() {
+	global_state.selected_keys = clone(global_state.highlighted_keys);
+})
+$("#sb_addgood").click(function() {
+	global_state.good_keys = clone(global_state.highlighted_keys);
+})
+$("#sb_clearbad").click(function() {
+	global_state.selected_keys = {};
+})
+$("#sb_cleargood").click(function() {
+	global_state.good_keys = {};
+})
+</script>
+-->
+<script type="text/javascript">
+$("#errorbox").submit(function() {
+	if (global_state.n_selected_keys() == 0) {
+		error("Please select 1+ points to debug!")
+		return false;
+	}
+	global_state.attrs = [];
+	$(".errattrs").get().forEach(function(d) {
+		if ($(d).attr("checked"))
+			global_state.attrs.push($(d).val())
+	})
+
+	$("#errbox_attrs").val(JSON.stringify(global_state.attrs));
+	$("#errbox_errids").val(JSON.stringify(global_state.bad_tuple_ids));
+	$("#errbox_val").val(JSON.stringify(global_state.selected_keys));
+	$("#errbox_goodkeys").val(JSON.stringify(global_state.good_keys));	
+	$("#errbox_db").val(global_state.db);
+	return true;	
+});
+</script>

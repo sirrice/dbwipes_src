@@ -1,0 +1,184 @@
+
+
+
+{% raw %}
+
+<script id="querylist-template" type="text/x-handlebars-template">
+<h4>Predefined Queries</h4>
+<div class="btn-group btn-group-vertical">
+{{#each queries}}
+	<button type="button" class="btn" id="{{this.id}}">{{this.name}}</button>
+{{/each}}	
+</div>
+</script>
+
+{% endraw %}
+
+
+
+<script type="text/javascript">
+var canned_queries = {
+	intel : {queries:[
+	{
+		id : 'sql_intel1',
+ 		 name: 'Anomalous noon readings',
+		 query : "SELECT avg(temp), stddev(temp),\n    ((extract(epoch from date+time - '2004-3-1'::timestamp)) / (30*60)) :: int as dist\nFROM readings\nWHERE date+time > '2004-3-1'::timestamp and date+time < '2004-3-5'::timestamp\nGROUP BY dist ORDER BY dist",
+		 desc: "This graph plots the average and standard deviation of temperature sensors between 3/1/2004 to 3/5/2004.  The anomalous standard deviation values are due to a mote at noon. Data from the Intel Sensor Dataset.",
+		 db: "intel"
+	},
+	{
+		id : 'sql_intel2',
+ 		 name: 'Initial Sensor Failure',
+		 query : "SELECT avg(temp), stddev(temp),\n    ((extract(epoch from date+time - '2004-3-1'::timestamp)) / (30*60)) :: int as dist\nFROM readings\nWHERE date+time > '2004-3-5'::timestamp and date+time < '2004-3-10'::timestamp\nGROUP BY dist ORDER BY dist",
+		 desc: "This graph plots the average and standard deviation of temperature sensors between 3/5/2004 to 3/10/2004.  The anomalous standard deviation values are due to the first failing sensor mote. Data from the Intel Sensor Dataset.",
+		 db: "intel"
+	},	
+	{
+		id : 'sql_intel3',
+		name: "Multiple Sensor Failures",
+		query : "SELECT avg(temp), stddev(temp),\n    ((extract(epoch from date+time - '2004-3-1'::timestamp)) / (30*60)) :: int as dist\nFROM readings\nWHERE date+time > '2004-3-10'::timestamp and date+time < '2004-3-15'::timestamp\nGROUP BY dist ORDER BY dist",
+		 desc: "This graph plots the average temperature across sensors between 3/10/2004 to 3/15/2004.  The sensor batteries begin dying, and begin generating massive amounts of anomalous readings. Data from the Intel Sensor Dataset.",
+		db: "intel"
+	}]},
+	fec12 : {queries:[
+		{
+			id: 'sql_fec0',
+			query : "SELECT avg(disb_amt), cand_nm as cand_nm, cand_id\nFROM expenses\nGROUP BY cand_nm, cand_id",
+			name: "2012 Candidate Names",
+			desc: "List of candidate names and IDs.  ",
+			db: "fec12"
+		},
+		{
+			id : 'sql_fec1',
+			name: "2012 Obama Campaign Expenses",
+			query : "SELECT sum(disb_amt),\n            (extract( epoch from disb_dt-'2009-1-2'::timestamp) / (24*60*60)) :: int as day\nFROM expenses\nWHERE cand_id = 'P80003338'\nGROUP BY day ;",
+			desc: "Total day by day expenses from the Obama 2012 Presidential campaign. Data from the FEC.",
+			db: "fec12"
+		},
+		{
+			id : 'sql_fec2',
+			name: "2012 Total Campaign Expenses",
+			query : "SELECT sum(disb_amt),\n            (extract( epoch from disb_dt-'2009-1-2'::timestamp) / (24*60*60)) :: int as day\nFROM expenses\nGROUP BY day ;",
+			desc: "Total day by day expenses from 2012 Election. Data from the FEC.",
+			db: "fec12"
+		},
+		{
+			id: 'sql_fec3',
+			query : "SELECT avg(disb_amt), cand_nm as cand_nm, cand_id\nFROM expenses2008\nGROUP BY cand_nm, cand_id",
+			name: "2008 Candidate Names",
+			desc: "List of candidate names and IDs.  ",
+			db: "fec12"
+		},
+		{
+			id : 'sql_fec4',
+			name: "2008 Obama Campaign Expenses",
+			query : "SELECT sum(disb_amt),\n            (extract( epoch from disb_dt-'2007-1-2'::timestamp) / (24*60*60)) :: int as day\nFROM expenses2008\nWHERE cand_id = 'P80003338'\nGROUP BY day ;",
+			desc: "Total day by day expenses from the Obama 2008 Presidential campaign. Data from the FEC.",
+			db: "fec12"
+		},
+		{
+			id : 'sql_fec5',
+			name: "2008 Total Campaign Expenses",
+			query : "SELECT sum(disb_amt),\n            (extract( epoch from disb_dt-'2007-1-2'::timestamp) / (24*60*60)) :: int as day\nFROM expenses2008\nGROUP BY day ;",
+			desc: "Total day by day expenses from 2008 Election. Data from the FEC.",
+			db: "fec12"
+		},
+	]}
+};
+
+var render_canned_queries = function(dbname) {
+	var template = Handlebars.compile($("#querylist-template").html());
+	var html = template(canned_queries[dbname]);
+	var ql = $(html);
+	console.log([dbname, canned_queries[dbname], html])
+	$("#ql-container").empty().append(ql);
+
+
+	_.each(canned_queries[dbname].queries, function(o){
+		var el = $("#" + o.id);
+		el.click(function() {
+			$("#query").text(o.query);
+			$("#querybox input[name=db]").val(o.db);
+			$("#query_desc").text(o.desc)
+		})
+	});
+
+	$("#query").focus(function() {
+		$("#query_desc").text("custom query")
+	})		
+}
+
+</script>
+
+
+
+<div class="row-fluid">
+<div class="span7">
+<form id='querybox' class="form-horizontal"  action='/' method='POST'>
+
+<fieldset>
+{% include "dbselect.html" %}
+<!--<legend>Enter an Aggregate SQL query</legend>-->
+<!--<div class="control-group">
+	<label class="control-label">
+		Select a SQL query
+	</label>
+	<div class="controls" id="ql-container">
+	</div>
+</div>
+-->
+</fieldset>
+
+
+<fieldset>
+
+<div class="control-group">
+	<label class="control-label" for="query">
+		Query
+	</label>
+	<div class="controls">
+		<textarea name="query" id="query" class='input-xlarge' style="width:100%" rows=5 >{% if query %}{{query|safe}}{% endif %}</textarea>
+	</div>
+</div>
+</fieldset>
+
+<fieldset>
+	<label class="control-label" for="query">
+		Description
+	</label>
+	<div class="controls">	
+		<blockquote id="query_desc"></blockquote>
+	</div>
+</fieldset>
+
+<fieldset>
+<div class="control-group">
+	<div class="controls">
+		<input type="submit" class="btn btn-primary" style="width:100%;" value="Run Query" />
+	</div>
+</div>
+</fieldset>
+
+</form>
+
+
+<div id="messagebox">
+{% if errormsg %}
+	<div class="alert alert-error">
+	  <a class="close" data-dismiss="alert">×</a>
+	  {{errormsg}}
+	</div>
+{% endif %}
+</div>
+
+
+</div><!-- end span12 -->
+
+
+<div class="span4">
+	<div id="ql-container"></div>
+</div>
+
+
+</div>
+

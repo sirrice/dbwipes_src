@@ -1,0 +1,43 @@
+
+<h2 class="heading">Tuple Data Plot <small></small></h2>
+
+<div id="tupplot">
+	<div class="legend"></div>
+	<svg>
+	<text x=200 y=200>Please select some aggregate points and zoom in</text>
+	</svg>
+	<div class="xlabel"></div>
+</div>
+
+
+<div class="page-header">
+	<h2>Data Cleaning Operations</h2>
+</div>
+
+<form id='deleteform' class="form-horizontal"  action='/query/' method='POST'>
+<legend>Delete <span class="err_npts">0</span> Tuples</legend>
+<textarea style="display:none;" id="deleteform_query" name="query">{{query|safe}}</textarea>
+<input type="hidden" id="deleteform_ids" name="bad_tuple_ids" value="{}"/>
+<input type="hidden" id="deletefrom_db" name="db" value=""/>
+<div class='form-actions'>
+	<input type="submit" id="sb_deltups" class="btn btn-primary" value="Delete Tuples" />
+	<button class="btn" id="sb_addexamples" value="Add bad examples">Add bad examples</button>
+</div>
+</form>
+
+
+<script type="text/javascript">
+$("#sb_addexamples").click(function(){
+	global_state.bad_tuple_ids = global_state.highlighted_tuple_ids;
+	return false;
+});
+$("#deleteform").submit(function() {
+	if (global_state.n_bad_tuple_ids() == 0) {
+		error("Please select at least one point to remove");
+		return false;
+	}
+	$("#deleteform_ids").val(JSON.stringify(global_state.highlighted_tuple_ids));
+	$("#deletefrom_db").val(global_state.db);
+	return true;
+});
+</script>

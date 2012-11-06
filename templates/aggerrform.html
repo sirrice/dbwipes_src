@@ -1,0 +1,55 @@
+
+<!--
+<form id='errorbox' class="form-horizontal" action='/debug/' method='POST'>
+
+
+<fieldset>
+
+<legend>Specify Error Metric </legend>
+
+<div class="control-group">
+	<label class="control-label" for="errortypes">Metric</label>
+	<div class="controls">
+		<label class="radio"><input type="radio" name="errtype" {% if errtype == '0' %}checked{% endif %} value="0">Wrong</label>
+		<label class="radio inline" style="margin-right: 10px;">
+			<input type="radio" name="errtype" {% if errtype == '1' %}checked{% endif %} value="1">Should be equal to
+		</label> <input class="inline" name="erreq" value="{{endeq}}" style=""/>
+		<label class="radio"><input type="radio" name="errtype" {% if errtype == '2' %}checked{% endif %} value="2">Too High</label>
+		<label class="radio"><input type="radio" name="errtype" {% if errtype == '3' %}checked{% endif %} value="3">Too Low</label>
+	</div>
+</div>
+
+
+<div class="control-group">
+	<label class="control-label" for="errortypes">Ignore attributes</label>
+	<div class="controls">
+	{% for attrname, type, checked in result_schema %}
+
+		<label class="checkbox">
+			<input type="checkbox" {%if checked%}checked{%endif%} class="errattrs" id="errattrs_{{attrname}}" value="{{attrname}}"/>
+			<div class="row">
+			<div class="span2">{{attrname}}</div>
+			<div class="span1">{{type}}</div>
+			</div>
+		</label>
+
+	{% endfor %}
+	</div>
+</div>
+-->
+<!--
+
+<textarea style="display:none;" id="errbox_query" name="query">{{query|safe}}</textarea>
+<input type="hidden" id="errbox_errids" name="bad_tuple_ids" value="{}"/>	
+<input type="hidden" id="errbox_val" name="data" value="{}">
+<input type="hidden" id="errbox_goodkeys" name="goodkeys" value="{}">
+<input type="hidden" id="errbox_db" name="db" value="intel">
+<input type="hidden" id="errbox_ignore" name="ignore" value="[]">
+
+<div class='form-actions'>
+	<input type="submit" id="sb_err" class="btn btn-primary" value="Debug Highlighted Points!" />
+</div>
+</fieldset>
+</form>
+
+-->
