@@ -164,7 +164,7 @@ def get_fec12_obama():
 
 
     def get_ground_truth(table):
-        return [row['id'].value for row in table if row['disb_amt'].value > 1500000]
+        return [row['id'].value for row in table if 'GMMB' in row.domain['recipient_nm'].values[int(row['recipient_nm'])]] # row['disb_amt'].value > 1500000]
     return sql, badresults, goodresults, get_ground_truth
 
 

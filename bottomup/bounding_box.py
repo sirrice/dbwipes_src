@@ -13,8 +13,8 @@ def bounding_box(bbox1, bbox2):
     return (mins, maxs)
 
 def intersection_box(bbox1, bbox2):
-    mins = tuple([max(min1, min2) for min1, min2 in zip(bbox1[0], bbox2[0])])
-    maxs = tuple([min(max1, max2) for max1, max2 in zip(bbox1[1], bbox2[1])])
+    mins = map(max, zip(bbox1[0], bbox2[0]))
+    maxs = map(min, zip(bbox1[1], bbox2[1]))
     return (mins, maxs)
 
 def box_contained(box, bound):

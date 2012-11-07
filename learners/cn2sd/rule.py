@@ -368,6 +368,8 @@ class SDRule(object) :
             if len(c.values) == 1:
                 vidx = int(c.values[0])
                 v = domain[c.position].values[vidx]
+            elif len(c.values) == len(domain[c.position].values):
+                return
             else:
                 vs = [domain[c.position].values[int(vidx)] for vidx in c.values]
                 vs = map(str, vs)

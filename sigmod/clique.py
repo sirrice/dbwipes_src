@@ -11,36 +11,49 @@ from itertools import chain
 
 from learners.cn2sd.rule import fill_in_rules
 from learners.cn2sd.refiner import *
-from score import QuadScoreSample7
 from bottomup.bounding_box import *
 from bottomup.cluster import *
 from util import *
 from basic import Basic
+from merger import Merger
 
 
 
 class RuleObj(object):
-    def __init__(self, rule, bad_err_funcs, good_err_funcs, bad_tables, good_tables):
+    def __init__(self, rule, mr):
+        bad_err_funcs = mr.bad_err_funcs
+        good_err_funcs = mr.good_err_funcs
+        bad_tables = mr.bad_tables
+        good_tables = mr.good_tables
+        compute_stat = mr.compute_stat
+        c = mr.c
+        lamb = mr.lamb
+
         self.rule = rule
-        self.bad_stats, self.bad_counts = self.compute_stat(bad_err_funcs, bad_tables)
-        self.good_stats, self.good_counts = self.compute_stat(good_err_funcs, good_tables)
-        self.good_stats = map(abs, self.good_stats)
+        self.bad_deltas, self.bad_counts = compute_stat(rule, bad_err_funcs, bad_tables)
+        self.good_deltas, self.good_counts = compute_stat(rule, good_err_funcs, good_tables)
+        self.good_stats = map(abs, self.good_deltas)
         self.good_skip = False
 
-        # compute diff
-        f = lambda counts: (np.mean(counts))
-        self.bad_stat = np.mean(self.bad_stats)
-        self.good_stat = self.good_stats and max(self.good_stats) or 0
-        self.npts = max(self.bad_counts + self.good_counts)
-        self.mean_pts = np.mean(self.bad_counts + self.good_counts)
-        self.bad_inf = self.bad_stat# / (1+f(self.bad_counts))
-        self.good_inf = self.good_stat# / (1+f(self.good_counts))
-        self.inf =  self.bad_inf - self.good_inf
+
+        self.bad_infs = [bd / ((bc+1)**c) for bd,bc in zip(self.bad_deltas, self.bad_counts) if bc]
+        self.good_infs = [gd / ((gc+1)**c) for gd,gc in zip(self.good_deltas, self.good_counts) if gc]
+        self.bad_inf = self.bad_infs and np.mean(self.bad_infs) or 0
+        self.good_inf = self.good_infs and max(self.good_infs) or 0
+        self.inf = lamb * self.bad_inf - (1.-lamb) * self.good_inf
         self.best_inf = self.bad_inf
+
+        self.npts = sum(self.bad_counts + self.good_counts)
+        self.good_npts = sum(self.good_counts)
+        self.bad_npts = sum(self.bad_counts)
+        self.mean_pts = np.mean(self.bad_counts + self.good_counts)
 
         self.rule.quality = self.inf
         if not math.isnan(self.inf):
-            print '%f\t%f\t%f\t%f\t%s' % (self.inf, self.npts, self.bad_stat, self.good_stat, self.rule) 
+            print  self
+    
+    def __str__(self):
+        return 'inf %.4f\tpts %d/%d\tr/g %.4f - %.4f\t%s' % (self.inf, sum(self.bad_counts), sum(self.good_counts), self.bad_inf, self.good_inf, self.rule) 
 
     def __hash__(self):
         return hash(self.rule)
@@ -54,6 +67,9 @@ class RuleObj(object):
             infs.append(inf)
         return infs, map(len, datas)
 
+    def __eq__(self, o):
+        return hash(self) == hash(o)
+
 
     def __cmp__(self, o):
         if self.inf > o.inf:
@@ -64,11 +80,13 @@ class RuleObj(object):
 
 
 
-class CLIQUE(Basic):
+class MR(Basic):
 
     def set_params(self, **kwargs):
         self.cols = kwargs.get('cols', self.cols)
         self.params.update(kwargs)
+        self.max_bad_inf = -1e1000000
+        self.good_thresh = 0.0001
 
 
     def __call__(self, full_table, bad_tables, good_tables, **kwargs):
@@ -90,7 +108,7 @@ class CLIQUE(Basic):
             print "n added\t%d" % nadded
             print "n rules\t%d" % (sum(map(len, pruned_rules.values())))
             self.best.sort()
-            print '\n'.join(map(lambda ro: '\t%f\t%s' % (ro.inf, str(ro.rule)), self.best))
+            print '\n'.join(map(lambda ro: '\tr/g %.4f - %.4f\tinf %.4f\tpts %d/%d\t%s' % (ro.bad_inf, ro.good_inf, ro.inf, ro.bad_npts, ro.good_npts, str(ro.rule)), self.best))
 
             
             if not nadded:
@@ -99,47 +117,39 @@ class CLIQUE(Basic):
 
             rules = pruned_rules
 
+
+
         self.best.sort(reverse=True)
         rules = [ro.rule for ro in self.best]
-        self.err_func = self.bad_err_funcs[0]
         fill_in_rules(rules, self.full_table, cols=self.cols)
-        self.all_clusters = [Cluster.from_rule(r, self.cols) for r in rules]
-        self.all_clusters.sort(key=lambda c: c.error, reverse=True)
-        return self.all_clusters
+        clusters = [Cluster.from_rule(r, self.cols) for r in rules]
 
-        thresh = compute_clusters_threshold(self.all_clusters)
+        for c in clusters:
+            c.error = self.influence(c) 
+        thresh = compute_clusters_threshold(clusters)
         is_mergable = lambda c: c.error >= thresh
-        print "threshold", thresh
-
-
-        start = time.time()
         params = dict(self.params)
         params.update({'cols' : self.cols,
-                       'full_table' : full_table,
-                       'bad_tables' : self.bad_tables,
-                       'good_tables' : self.good_tables,
-                       'bad_err_funcs' : self.bad_err_funcs,
-                       'good_err_funcs' : self.good_err_funcs,
-                       'err_func' : self.err_func})
-        self.merger = ReexecMerger(**params)
-        self.final_clusters = self.merger(self.all_clusters, is_mergable=is_mergable)
-        self.final_clusters.sort(key=lambda c: c.error, reverse=True)
-        self.merge_cost = time.time() - start
+                       'influence' : lambda cluster: self.influence(cluster),
+                       'is_mergable' : is_mergable})
+        self.merger = Merger(**params)
+        self.final_clusters = self.merger(clusters)
+        self.all_clusters = clusters
 
-        final_rules = clusters_to_rules(self.final_clusters, 
-                self.cols, full_table)
-        print "\n============Besties==========="
-        for rule in final_rules:
-            print "%f\t%s" % (rule.quality, str(rule))
+
+        print "========Post Merge=========="
+        ros = [RuleObj(r, self) for r in clusters_to_rules(self.final_clusters, self.cols, self.full_table)]
+        ros.sort(key=lambda ro: ro.inf, reverse=True)
+        print '\n'.join(map(str, ros))
 
 
         return self.final_clusters
 
 
+    def influence(self, cluster):
+        rule = cluster.to_rule(self.full_table, self.cols, cont_dists=self.cont_dists, disc_dists=self.disc_dists)
+        return Basic.influence(self, rule)
 
-
-
-        return self.all_clusters
 
 
     def prune_rules(self, rules):
@@ -151,19 +161,19 @@ class CLIQUE(Basic):
     
     def prune_rule(self, ro):
         # update bad influence bounds
-        self.max_bad_stat = max(self.max_bad_stat, ro.bad_stat)
-        self.bad_thresh = max(self.bad_thresh, 0.01 * self.max_bad_stat)
+        self.max_bad_inf = max(self.max_bad_inf, ro.bad_inf)
+        self.bad_thresh = max(self.bad_thresh, 0.01 * self.max_bad_inf)
 
         if ro.npts < self.min_pts:
             return False
         
-        if (math.isnan(ro.bad_stat) or
-            math.isnan(ro.good_stat) or
+        if (math.isnan(ro.bad_inf) or
+            math.isnan(ro.good_inf) or
             math.isnan(ro.inf)):
             return False
         
         # check min bad influence
-        if ro.bad_stat < self.bad_thresh:
+        if ro.bad_inf < self.bad_thresh:
             return False
 
         # assuming the best case (the good_stat was zero)
@@ -172,7 +182,7 @@ class CLIQUE(Basic):
             return False
  
         # check max good influence
-        if ro.good_stat < self.good_thresh:
+        if ro.good_inf < self.good_thresh:
             # TODO: can skip computing good_stats
             ro.good_skip = True
 
@@ -217,12 +227,7 @@ class CLIQUE(Basic):
             """
 
 
-            ro = RuleObj(rule,
-                         self.bad_err_funcs,
-                         self.good_err_funcs,
-                         self.bad_tables,
-                         self.good_tables)
-
+            ro = RuleObj(rule,self)
             if not self.prune_rule(ro):
                 return set([ro])
             
@@ -248,11 +253,7 @@ class CLIQUE(Basic):
                 refiner = BeamRefiner(attrs=[attr], fanout=2)
                 ret = set()
                 for _, newrule in refiner(rule):
-                    newro = RuleObj(newrule,
-                                 self.bad_err_funcs,
-                                 self.good_err_funcs,
-                                 self.bad_tables,
-                                 self.good_tables)
+                    newro = RuleObj(newrule, self)
                     ret.update(recurse_disc_rule(attr, newrule))
 
         
@@ -350,14 +351,10 @@ class CLIQUE(Basic):
                 seen.add(hash(str(rule)))
 
 
-                ro = RuleObj(rule,
-                             self.bad_err_funcs,
-                             self.good_err_funcs,
-                             self.bad_tables,
-                             self.good_tables)
+                ro = RuleObj(rule,self)
 
 
-                if ro.npts == max(ro1.npts, ro2.npts):
+                if ro.npts in (ro1.npts, ro2.npts):
                     continue
                 
                 yield ro

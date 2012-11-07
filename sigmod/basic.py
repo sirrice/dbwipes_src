@@ -32,10 +32,10 @@ class Basic(object):
         self.bad_thresh = 0
         self.good_thresh = 0
         self.min_pts = 5
-        self.max_bests = 100
+        self.max_bests = 20
 
         self.lamb = kwargs.get('lamb', 0.5)
-        self.c = kwargs.get('c', 1)
+        self.c = kwargs.get('c', 0.9)
         self.bincremental = kwargs.get('bincremental', True)
         
 
@@ -62,6 +62,12 @@ class Basic(object):
                          chain(bad_tables, good_tables)):
             ef.setup(t)
 
+        domain = self.full_table.domain
+        attrnames = [attr.name for attr in domain]
+        self.cont_dists = dict(zip(attrnames, Orange.statistics.basic.Domain(self.full_table)))
+        self.disc_dists = dict(zip(attrnames, Orange.statistics.distribution.Domain(self.full_table)))
+
+
 
     def __call__(self, full_table, bad_tables, good_tables, **kwargs):
         """
@@ -76,12 +82,14 @@ class Basic(object):
     def influence(self, rule):
         bdeltas, bcounts = self.bad_influences(rule)
         gdeltas, gcounts = self.good_influences(rule)
-
-        binfs = [bdelta/(bcount**self.c) for bdelta,bcount in zip(bdeltas, bcounts)]
-        ginfs = [gdelta/(gcount**self.c) for gdelta,gcount in zip(gdeltas, gcounts)]
+        gdeltas = map(abs, gdeltas)
         
-        binf = np.mean(binfs)
-        ginf = max(ginfs)
+        binfs = [bdelta/(bcount**self.c) for bdelta,bcount in zip(bdeltas, bcounts) if bcount]
+        ginfs = [gdelta/(gcount**self.c) for gdelta,gcount in zip(gdeltas, gcounts) if gcount]
+
+        
+        binf = binfs and np.mean(binfs) or -1e10000000
+        ginf = ginfs and max(ginfs) or 0
         inf = self.lamb * binf - (1. - self.lamb) * ginf
 
         rule.quality = inf
@@ -96,7 +104,7 @@ class Basic(object):
 
 
     def compute_stat(self, rule, err_funcs, tables):
-        datas = map(rule.filter_table, tables)
+        datas = rule and map(rule.filter_table, tables) or tables
         infs = []
         for ef, data in zip(err_funcs, datas):
             arr = data.to_numpyMA('ac')[0]

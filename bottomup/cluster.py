@@ -7,8 +7,9 @@ import Orange
 import sys
 sys.path.extend(['.', '..'])
 
-from itertools import chain
+from itertools import chain, product, groupby
 from collections import defaultdict
+from operator import sub
 
 from util.prob import *
 from bounding_box import *
@@ -34,6 +35,12 @@ class Cluster(object):
         self.npts = kwargs.get('npts', 1)
         self.kwargs = kwargs
         self.id = Cluster._id
+
+
+        self.bad_inf = None
+        self.good_inf = None
+        self.idxs = []
+
         Cluster._id += 1
 
         for k,vs in discretes.iteritems():
@@ -51,6 +58,66 @@ class Cluster(object):
             return self.error
         return max(self.error, max(p.max_anc_error for p in self.parents))
 
+    def split_on(self, c):
+        ex_clusters = [] # clusters that don't intersect with c
+        in_clusters = [] # clusters that intersect with c
+        
+        if not volume(intersection_box(self.bbox, c.bbox)):
+            return ()
+
+        if self.discretes:
+            # they have same keys, just need to diff them
+            myd = self.discretes
+            od = c.discretes
+
+            intersect_discretes = dict()
+            excluded_discretes = dict()
+            for key in self.discretes:
+                myvals = set(myd[key])
+                ovals = set(od[key])
+                intersect_discretes[key] = myvals.intersection(ovals)
+                excluded_discretes[key] = myvals.difference(ovals)
+
+            if not sum(map(len, intersect_discretes.values())):
+                return ()
+
+            if not sum(map(len, excluded_discretes.values())):
+                return ([self.clone()], [])
+
+
+            excluded_cluster = self.clone() 
+            excluded_cluster.discretes = excluded_discretes
+            ex_clusters.append(excluded_cluster)
+        else:
+            intersect_discretes = dict(self.discretes)
+
+        if box_contained(self.bbox, c.bbox):
+            intersect_cluster = self.clone()
+            intersect_cluster.discretes = intersect_discretes
+            return ([intersect_cluster], ex_clusters)
+
+        # how the painful part.. splitting the contiuous domain
+        inner_mins = map(max, zip(self.bbox[0], c.bbox[0]))
+        inner_maxs = map(min, zip(self.bbox[1], c.bbox[1]))
+        all_ranges = [[] for i in inner_mins]
+        for idx, (bmin, bmax, imin, imax) in enumerate(zip(self.bbox[0], self.bbox[1], inner_mins, inner_maxs)):
+            vals = sorted(set([bmin, bmax, imin, imax]))
+            for i in xrange(len(vals)-1):
+                all_ranges[idx].append((vals[i], vals[i+1]))
+
+        all_boxes = product(*all_ranges)
+        all_clusters = []
+        for box in all_boxes:
+            new_cluster = self.clone()
+            new_cluster.bboxes = zip(*box)
+            new_cluster.discretes = dict(intersect_discretes)
+            all_clusters.append(new_cluster)
+
+        groups = dict(groupby(all_clusters, lambda b: box_contained(b.bbox, c.bbox)))
+        ex_clusters.extend(groups.get(False, []))
+        in_clusters = groups.get(True, [])
+        return (in_clusters, ex_clusters)
+
 
     @staticmethod
     def merge(c1, c2, intersecting_clusters, min_volume):
@@ -66,7 +133,7 @@ class Cluster(object):
             weights.append(volume(bbox) or min_volume)
             errors.append(intersection.error)
 
-        total_weight = sum(weights)
+        total_weight = sum(weights) or 1.
         if not total_weight:
             return None
 
@@ -109,13 +176,45 @@ class Cluster(object):
         error = error or rule.quality
         return Cluster(bbox, error, cont_cols, parents=parents, discretes=discretes, npts=len(rule.examples))
 
+    def adjacent(self, o):
+        """@return True if they overlap on one or more continuous attribute, 
+           and their discrete attributes intersect"""
+        d_intersects =  self.discretes_intersect(o)
+        if not d_intersects:
+            return False
+
+        d_same = self.discretes_same(o)
+        intersection = intersection_box(self.bbox, o.bbox)
+        if True or d_same:
+            diffs = map(lambda p:sub(*p), zip(*intersection))
+            return len(filter(lambda d: d < 0, diffs)) > 0
+        return volume(intersection) >= 0.7 * min(self.volume, o.volume)
+
+    def contains(self, o):
+        for key in o.discretes.keys():
+            if key in self.discretes:
+                diff = set(o.discretes[key]).difference(self.discretes[key])
+                if len(diff):
+                    return False
+        return box_contained(o.bbox, self.bbox)
+
+    def discretes_same(self, o):
+        mykeys = set(self.discretes.keys())
+        okeys = set(o.discretes.keys())
+        if mykeys != okeys:
+            return False
+        for key in mykeys:
+            if set(self.discretes[key]) != set(o.discretes[key]):
+                return False
+        return True
+
     def discretes_intersect(self, o):
         myd = self.discretes
         od = o.discretes
         keys = set(myd.keys()).intersection(set(od.keys()))
         
         for key in keys:
-            if not od[key].intersection(myd[key]):
+            if len(od[key].intersection(myd[key])) < min(len(od[key]), len(myd[key]))-1:
                 return False
         return True
 
@@ -227,12 +326,11 @@ def filter_top_clusters(clusters, nstds=1.):
     """
     if len(clusters) <= 1:
         return clusters
-    thresh = compute_clusters_threshold(clusters, nstds)
-    f = lambda c: c.error >= thresh
-    # errors = [c.error for c in clusters]
-    # minv, maxv, mean, std = min(errors), max(errors), np.mean(errors), np.std(errors)
-    # thresh = min(maxv, mean + nstds * std)
-    # thresh = 0.6 * (maxv - minv) + minv
+    #thresh = compute_clusters_threshold(clusters, nstds)
+    errors = [c.error for c in clusters]
+    minv, maxv, mean, std = min(errors), max(errors), np.mean(errors), np.std(errors)
+    thresh = min(maxv, mean + nstds * std)
+    thresh = 0.6 * (maxv - minv) + minv
     f = lambda c: c.error >= thresh
     return filter(f, clusters)
 

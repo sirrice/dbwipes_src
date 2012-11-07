@@ -121,21 +121,28 @@ if __name__ == '__main__':
         print cols
         
         errperc = 0.001
-        topdown = BDT(aggerr=obj.errors[0],
+        np.seterr(all='raise')
+        topdown = MR(aggerr=obj.errors[0],
                           errperc=errperc,
-                          epsilon=0.05,
+                          epsilon=0.003,
                           cols=cols,
                           msethreshold=.25,
-                          complexity_multiplier=1.5)
+                          tau=[0.001, 0.05],
+                          lamb=0.5,
+                          min_pts = 1,
+                          complexity_multiplier=1.5,
+                          c= .3)
         clusters = topdown(full_table, bad_tables, good_tables)
         clusters = filter(lambda x:x, clusters)
 
         all_clusters = normalize_cluster_errors([c.clone() for c in topdown.all_clusters])
         clusters = normalize_cluster_errors([c.clone() for c in clusters])
-        best_clusters = filter_top_clusters(clusters)
+        best_clusters = filter_top_clusters(clusters, nstds=1)
 
         print "\n======Final Results====="
+        print "Ideal: %d tuples" % len(get_ground_truth(full_table))
         for r in clusters_to_rules(best_clusters, cols, table):
+            print [int(row['disb_amt'].value) for row in r.examples]
             print '%.4f\t%d\t%s' % (r.quality, len(r.examples), sdrule_to_clauses(r)[0])
             acc, pre, rec = compute_stats(r, set(get_ground_truth(full_table)), full_table)
             print acc, pre, rec
