@@ -39,6 +39,7 @@ class Cluster(object):
 
         self.bad_inf = None
         self.good_inf = None
+        self.mean_inf = None
         self.idxs = []
 
         Cluster._id += 1
@@ -106,17 +107,18 @@ class Cluster(object):
                 all_ranges[idx].append((vals[i], vals[i+1]))
 
         all_boxes = product(*all_ranges)
-        all_clusters = []
+        groups = defaultdict(list)
         for box in all_boxes:
             new_cluster = self.clone()
-            new_cluster.bboxes = zip(*box)
+            new_cluster.bbox = tuple(zip(*box))
             new_cluster.discretes = dict(intersect_discretes)
-            all_clusters.append(new_cluster)
+            groups[box_contained(new_cluster.bbox, c.bbox)].append(new_cluster)
 
-        groups = dict(groupby(all_clusters, lambda b: box_contained(b.bbox, c.bbox)))
         ex_clusters.extend(groups.get(False, []))
         in_clusters = groups.get(True, [])
-        return (in_clusters, ex_clusters)
+        for ec in ex_clusters:
+            ec.parents = (self, c)
+        return (list(in_clusters), list(ex_clusters))
 
 
     @staticmethod

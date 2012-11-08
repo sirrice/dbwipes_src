@@ -109,9 +109,9 @@ def serial_hybrid(obj, aggerr, **kwargs):
 
 
         if aggerr.agg.func in (errfunc.SumErrFunc, errfunc.CountErrFunc):
-            klass = MC
-        else:
             klass = BDT
+        else:
+            klass = MR
 
 
         start = time.time()
@@ -123,7 +123,6 @@ def serial_hybrid(obj, aggerr, **kwargs):
         rules = clusters_to_rules(clusters, cols, full_table)
         
 
-        pdb.set_trace()
 
         cost = time.time() - start
         ncalls = 0

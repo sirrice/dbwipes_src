@@ -53,6 +53,7 @@ class Basic(object):
         create bad_err_funcs
         """
         self.full_table = full_table
+        self.dummy_table = Orange.data.Table(full_table.domain)
         self.bad_tables = bad_tables
         self.good_tables = good_tables
         self.bad_err_funcs = [self.err_func.clone() for t in bad_tables]

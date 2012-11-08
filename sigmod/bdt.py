@@ -33,7 +33,10 @@ class Node(object):
     def __init__(self, rule):
         self.rule = rule
         self.children = []
+        self.parent = None
+        self.n = 0
         self.influence = -inf
+        self.prev_attr = None
 
     def set_score(self, score):
         self.influence = score
@@ -41,9 +44,6 @@ class Node(object):
     def add_child(self, child):
         self.children.append(child)
 
-    def __n__(self):
-        return len(self.rule.examples)
-    n = property(__n__)
 
     def __leaves__(self):
         if not self.children:
@@ -91,7 +91,8 @@ class BDTTablesPartitioner(Basic):
 #        (tables,), merged_table = reconcile_tables(tables)
         self.setup_tables(tables, full_table)
         base_rule = SDRule(full_table, None)
-        tree = self.grow(base_rule, self.tables, self.samp_rates)
+        node = Node(base_rule)
+        tree = self.grow(node, self.tables, self.samp_rates)
         return tree.leaves
 
     def sample(self, data, samp_rate):
@@ -124,18 +125,19 @@ class BDTTablesPartitioner(Basic):
         infl, infu = tuple(self.inf_bounds)
         tau, p = self.tau, self.p
         s = (tau[0] - tau[1]) / ((1-p)*infu - p * infl)
-        w = tau[0] + s*(infu - infmax)
+        w = tau[0] + s*(infmax - infu)
         w = min(tau[1], w)
         return w * (infu - infl)       
 
 
-
-    def estimate_inf(self, samples):
+    def estimate_infs(self, samples):
         f = lambda (idx, sample): map(lambda row: self.influence(row, idx), sample)
         infs = map(f, enumerate(samples))
         infs = filter(bool, infs)
-        ret = np.mean(map(np.mean,infs))
-        return ret
+        return infs
+
+    def estimate_inf(self, samples):
+        return np.mean(map(np.mean,self.estimate_infs(samples)))
 
     def get_score(self, rules, samples):
         scores = []
@@ -171,19 +173,30 @@ class BDTTablesPartitioner(Basic):
         return max(scores)
  
         
-    def grow(self, rule, tables, samp_rates):
+    def grow(self, node, tables, samp_rates):
+        rule = node.rule
         data = rule.examples
         datas = map(rule.filter_table, tables)
         samples = [self.sample(*pair) for pair in zip(datas, samp_rates)]
-        node = Node(rule)
+        counts = map(len, datas)
+        node.n = sum(counts)
 
-        if sum(map(len, datas)) == 0:
-            return None
+        if node.n == 0:
+            return node
 
-        print self.inf_bounds
+        all_infs = self.estimate_infs(samples)
+        maxstd = max(map(np.std, all_infs))
+        minmin = min(map(min, all_infs))
+        uu = np.mean(map(np.mean, all_infs))
+        maxmax = max(map(max, all_infs))
+        minthresh = self.compute_threshold(maxmax)
+        print '%s\t%4f - %4f\t%.4f\t%.4f : %.4f : %.4f\t%.4f\t%s' % (self.should_stop(samples), min(self.inf_bounds), max(self.inf_bounds), maxstd, minmin, uu, maxmax, minthresh, str(rule))
+        if minthresh < 0:
+            pdb.set_trace()
+            self.compute_threshold(maxmax)
+
 
         if self.should_stop(samples):
-            print map(len, datas), self.estimate_inf(samples), str(rule)[:40]
             node.set_score(self.estimate_inf(samples))
             return node
 
@@ -191,18 +204,22 @@ class BDTTablesPartitioner(Basic):
         for attr, new_rules in self.child_rules(rule):
             score = self.get_score(new_rules, samples)
             if score != -inf:
-                scores.append((new_rules, score))
+                scores.append((attr, new_rules, score))
 
         if not scores:
-            print map(len, datas), self.estimate_inf(samples), str(rule)[:40]
             node.set_score(self.estimate_inf(samples))
             return node
 
-        new_rules, score = min(scores, key=lambda p: p[1])
+        attr, new_rules, score = min(scores, key=lambda p: p[-1])
         all_new_srs = self.update_sample_rates(new_rules, datas, samp_rates)
 
         for new_rule, new_samp_rates in zip(new_rules, all_new_srs):
-            child = self.grow(new_rule, datas, new_samp_rates)
+            child = Node(new_rule)
+            child.prev_attr = attr
+            child.parent = node
+
+            self.grow(child, datas, new_samp_rates)
+
             if child and child.n:
                 if child.influence != -inf:
                     node.add_child(child)
@@ -211,7 +228,6 @@ class BDTTablesPartitioner(Basic):
             node.set_score(max([n.influence for n in node.children]))
         else:
             node.set_score(self.estimate_inf(samples))
-            print map(len, datas), self.estimate_inf(samples), str(rule)[:40]
         return node
 
 
@@ -339,9 +355,18 @@ class BDT(Basic):
 
     
     def intersect(self, bclusters, hclusters):
-        bqueue = deque(bclusters)
+        errors = [c.error for c in bclusters]
+        u, std = np.mean(errors), np.std(errors)
+        u = min(max(errors), u + std)
+        low_influence = [c for c in bclusters if c.error < u]
+        bqueue = deque([c for c in bclusters if c.error >= u])
+
+        hclusters = [c for c in hclusters if c.error >= u]
+        if not hclusters:
+            return bclusters
         hindex = self.create_rtree(hclusters)
         ret = []
+
 
         while bqueue:
             c = bqueue.popleft()
@@ -387,10 +412,13 @@ class BDT(Basic):
                 c.bad_inf = c.error
                 c.good_inf = -1e100000000
                 ret.append(c)
+
+        print "intersection %d untouched, %d split" % (len(low_influence), len(ret))
+        pdb.set_trace()
         return ret
 
     def influence(self, cluster):
-        rule = cluster.to_rule(self.full_table, self.cols, cont_dists=self.cont_dists, disc_dists=self.disc_dists)
+        rule = cluster.to_rule(self.dummy_table, self.cols, cont_dists=self.cont_dists, disc_dists=self.disc_dists)
         return Basic.influence(self, rule)
 
     def __call__(self, full_table, bad_tables, good_tables, **kwargs):
@@ -407,15 +435,18 @@ class BDT(Basic):
         bnodes.sort(key=lambda n: n.influence, reverse=True)
         bclusters = self.nodes_to_clusters(bnodes, full_table)
 
+        print
+
         hpartitioner = BDTTablesPartitioner(**params)
+        hpartitioner.inf_bounds = bpartitioner.inf_bounds
         hnodes = list(hpartitioner(good_tables, full_table))
         hnodes.sort(key=lambda n: n.influence, reverse=True)
         hclusters = self.nodes_to_clusters(hnodes, full_table)
 
 
-        print "==== Best Bad Clusters ===="
+        print "==== Best Bad Clusters (%d total) ====" % len(bnodes)
         print '\n'.join(map(str, bnodes[:10]))
-        print "==== Best Good Clusters ===="
+        print "==== Best Good Clusters (%d total) ====" % len(hnodes)
         print '\n'.join(map(str, hnodes[:10]))
 
 
@@ -423,11 +454,13 @@ class BDT(Basic):
         _logger.debug('intersecting')
         clusters = self.intersect(bclusters, hclusters)
         _logger.debug('done in %d', time.time()-start)
-        for c in clusters:
-            c.error = self.influence(c)
-        clusters = filter(lambda c: c.error != -inf, clusters)
+        _logger.debug("computing influences on %d", len(clusters))
+        for idx, c in enumerate(clusters):
+            c.mean_inf = c.error
+        clusters = filter(lambda c: c.mean_inf != -inf, clusters)
         _logger.debug('computed influences  in %d', time.time()-start)
 
+        _logger.debug('merging')
         self.final_clusters = self.merge(clusters)        
         self.all_clusters = clusters
         

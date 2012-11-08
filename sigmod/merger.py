@@ -19,6 +19,43 @@ from bottomup.cluster import *
 from zero import Zero
 
 _logger = get_logger()
+class AdjacencyGraph(object):
+    def __init__():
+        self.graph = defaultdict(set)
+        self.cid = 0
+        self.clusters = []
+        self.id2c = dict()
+        self.c2id = dict()
+
+    def insert(self, cluster):
+        if cluster in self.graph:
+            return
+
+        cid = len(self.clusters)
+        self.clusters.append(cluster)
+        self.id2c[cid] = cluster
+        self.c2id[cluster] = cid
+
+        for o, oid in self.c2id.items():
+            if o.adjacent(cluster):
+                self.graph[cluster].add(o)
+                self.graph[o].add(cluster)
+
+    def remove(self, cluster):
+        if cluster not in self.graph:
+            return
+
+        for neigh in self.graph[cluster]:
+            self.graph[neigh].remove(cluster)
+
+        cid = self.c2id[cluster]
+        del self.c2id[cluster]
+        del self.id2c[cid]
+        self.clusters[cid] = None
+
+    def neighbors(self, cluster):
+        return self.graph[cluster]
+
 
 
 class Merger(object):
@@ -56,7 +93,7 @@ class Merger(object):
         else:
             self.point_volume = vols.min() / 2.
 
-        self.setup_errors(clusters)
+        #self.setup_errors(clusters)
 
 #        # setup table bounds to that calls to kdtree and rtree are zeroed
 #        # this should be transparent from the caller
@@ -86,21 +123,6 @@ class Merger(object):
 
     def scale_box(self, box):
         return self.zero.zero(np.array(box)).tolist()
-
-    def normalize_cluster_errors(self, clusters):
-        if not self.diff_error:
-            return
-
-        for c in clusters:
-            c.error = (c.error - self.min_error) / self.diff_error
-        return clusters
-
-    def unnormalize_cluster_errors(self, clusters):
-        if not self.diff_error:
-            return
-
-        for c in clusters:
-            c.error = c.error * self.diff_error + self.min_error
 
     def filter_discrete(self, c1, c2, intersecting_clusters):
         return filter(c1.discretes_intersect,
@@ -161,8 +183,6 @@ class Merger(object):
                     matrix[i1,i2] = matrix[i2,i1] = 1
         return matrix
 
-        
-
 
     def neighbors(self, idxs, matrix):
         ret = set()
@@ -220,39 +240,6 @@ class Merger(object):
                 id_to_cluster[idx].add(mc)
 
         results = []
-
-#        while len(clusters_set) > self.min_clusters:
-#
-#            cur_clusters = sorted(clusters_set, key=lambda c: c.error, reverse=True)
-#            all_rms = set()
-#            all_merged = set()
-#            for cluster in filter(self.is_mergable, cur_clusters):
-#                # grow as much as possible
-#                rtree = self.construct_rtree(cur_clusters)
-#                merged, rms = self.expand(cluster, cur_clusters, adjacency_matrix, id_to_cluster, rtree)
-#
-#                all_rms.update(rms)
-#                all_merged.add(merged)
-#
-#            for rm in all_rms:
-#                for idx in rm.idxs:
-#                    if rm in id_to_cluster[idx]:
-#                        id_to_cluster[idx].remove(rm)
-#            for merged in all_merged:
-#                for idx in merged.idxs:
-#                    id_to_cluster[idx].add(merged)
-#
-#            _logger.debug("#merged\t%d\tout of %d", len(all_merged), len(cur_clusters))
-#
-#            if not merged:
-#                break
-#
-#            clusters_set.difference_update(rms)
-#            clusters_set.update(all_merged)
-#
-#        return results
-#
-
 
 
 

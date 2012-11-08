@@ -357,6 +357,52 @@ class SDRule(object) :
     attributes = property(__attributes__)
 
 
+    def simplify(self, data=None, ddists=None, bdists=None):
+        subset = data and self(data) or self.examples
+        data = data or self.data
+        sub_ddists = ddists or Orange.statistics.distribution.Domain(subset)
+        sub_bdists = bdists or Orange.statistics.basic.Domain(subset)
+        full_ddists = ddists or Orange.statistics.distribution.Domain(data)
+        full_bdists = bdists or Orange.statistics.basic.Domain(data)
+       
+        positions = [cond.position for cond in self.filter.conditions]
+
+
+        conds = []
+        for idx in positions:
+            attr = data.domain[idx]
+            sd = sub_ddists[idx]
+            sb = sub_bdists[idx]
+            fd = full_ddists[idx]
+            fb = full_bdists[idx]
+
+
+            if attr.var_type == Orange.feature.Type.Discrete:
+                svals = [k for k,v in sd.items() if v]
+                fvals = [k for k,v in fd.items() if v]
+                if set(svals) == set(fvals):
+                    continue
+                cond = orange.ValueFilter_discrete(
+                        position = idx,
+                        values = [orange.Value(attr, val) for val in svals]
+                        )
+            else:
+                if sb.min == fb.min and sb.max == fb.max:
+                    continue
+
+                cond = Orange.data.filter.ValueFilterContinuous(
+                        position=idx,
+                        oper = orange.ValueFilter.Between,
+                        min=sb.min,
+                        max=sb.max)
+            conds.append(cond)
+        
+        ret = self.clone()
+        ret.quality = self.quality
+        ret.filter.conditions = conds
+        return ret
+
+
 
     def condToString(self, c):
         domain = self.data.domain

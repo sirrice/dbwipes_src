@@ -124,11 +124,11 @@ if __name__ == '__main__':
                           epsilon=0.001,
                           cols=cols,
                           msethreshold=.25,
-                          tau=[0.01, 0.15],
+                          tau=[0.05, 0.15],
                           lamb=0.5,
                           min_pts = 1,
                           complexity_multiplier=1.5,
-                          c= 1.3)
+                          c= 0.5)
         clusters = topdown(full_table, bad_tables, good_tables)
         clusters = filter(lambda x:x, clusters)
 
@@ -139,6 +139,8 @@ if __name__ == '__main__':
         print "\n======Final Results====="
         print "Ideal: %d tuples" % len(get_ground_truth(full_table))
         for r in clusters_to_rules(best_clusters[:10], cols, table):
+            r = r.simplify()
+
             print '%.4f\t%d\t%s' % (r.quality, len(r.examples), sdrule_to_clauses(r)[0])
             acc, pre, rec = compute_stats(r, set(get_ground_truth(full_table)), full_table)
             print acc, pre, rec
