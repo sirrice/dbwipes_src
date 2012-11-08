@@ -326,7 +326,10 @@ def filter_top_clusters(clusters, nstds=1.):
     """
     if len(clusters) <= 1:
         return clusters
-    #thresh = compute_clusters_threshold(clusters, nstds)
+    thresh = compute_clusters_threshold(clusters, nstds)
+    f = lambda c: c.error >= thresh
+    return filter(f, clusters)
+
     errors = [c.error for c in clusters]
     minv, maxv, mean, std = min(errors), max(errors), np.mean(errors), np.std(errors)
     thresh = min(maxv, mean + nstds * std)

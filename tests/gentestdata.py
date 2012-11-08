@@ -62,7 +62,8 @@ def get_intel_noon():
     FROM readings
     WHERE date+time > '2004-3-1'::timestamp and date+time < '2004-3-10'::timestamp
     GROUP BY dist ORDER BY dist"""
-    badresults = [64, 72, 126, 127, 65, 66, 67, 68, 74, 75, 76, 122, 121, 124, 123, 125, 128, 129, 130, 131]
+    badresults = [64, 72, 126, 127, 65, 66, 67, 68, 74, 75, 76]
+    badresults = [122, 121, 124, 123, 125, 128, 129, 130, 131]
     goodresults = [0, 1, 9, 10, 2, 3, 4, 5, 6, 7, 8, 11, 12]
 
     def get_ground_truth(table):

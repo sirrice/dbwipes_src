@@ -35,7 +35,7 @@ class Basic(object):
         self.max_bests = 20
 
         self.lamb = kwargs.get('lamb', 0.5)
-        self.c = kwargs.get('c', 0.9)
+        self.c = kwargs.get('c', 1.)
         self.bincremental = kwargs.get('bincremental', True)
         
 

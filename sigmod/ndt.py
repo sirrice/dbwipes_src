@@ -51,7 +51,7 @@ class NDT(Basic):
         training.domain.class_var = training.domain[self.CLASS_ID]
 
         print "training on %d points" % len(training)
-        tree = Orange.classification.tree.C45Learner(training, cf=0.001)
+        tree = Orange.classification.tree.C45Learner(training[:100], cf=0.001)
         rules = c45_to_clauses(training, tree.tree)
 
         for rule in rules:

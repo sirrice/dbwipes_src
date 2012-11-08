@@ -105,9 +105,9 @@ class BDTTablesPartitioner(Basic):
                 return True
             h = lambda row: self.influence(row, idx)
             infmax = max(map(h, sample))
-            thresh = self.compute_threshold(infmax,  self.inf_bounds[0], self.inf_bounds[1])
-            score = self.compute_score(sample, idx)
-            return score < thresh
+            thresh = self.compute_threshold(infmax)
+            n, mean, std, maxv = self.compute_score(sample, idx)
+            return std < thresh
 
         return reduce(and_, map(f, enumerate(samples)))
 
@@ -120,7 +120,8 @@ class BDTTablesPartitioner(Basic):
             self.inf_bounds[1] = max(influence, self.inf_bounds[1])
        return row[self.SCORE_ID].value
 
-    def compute_threshold(self, infmax, infl, infu):
+    def compute_threshold(self, infmax):
+        infl, infu = tuple(self.inf_bounds)
         tau, p = self.tau, self.p
         s = (tau[0] - tau[1]) / ((1-p)*infu - p * infl)
         w = tau[0] + s*(infu - infmax)
@@ -148,21 +149,26 @@ class BDTTablesPartitioner(Basic):
         new_samples = map(lambda r: r.filter_table(sample), rules)
         f = lambda (idx, sample): self.compute_score(sample, idx)
         new_samples = filter(lambda s: len(s), new_samples)
-        if new_samples:
-            return sum(map(f, enumerate(new_samples)))
+        if len(new_samples) > 1:
+            stats = map(f, enumerate(new_samples))
+            return sum((std - self.compute_threshold(maxinf)) for n, mean, std, maxinf in stats)
+                
+            args = stats[0] + stats[1] + (0.05,)
+            return welchs_ttest(*args)
         return -inf
 
 
     def compute_score(self, data, idx):
         f = lambda row: self.influence(row, idx)
         try:
-            return np.std(map(f, data))
+            infs = map(f, data)
+            return len(infs), np.mean(infs), np.std(infs), max(infs)
         except:
             pdb.set_trace()
 
 
     def merge_scores(self, scores):
-        return min(scores)
+        return max(scores)
  
         
     def grow(self, rule, tables, samp_rates):
@@ -174,9 +180,10 @@ class BDTTablesPartitioner(Basic):
         if sum(map(len, datas)) == 0:
             return None
 
-        print map(len, datas), samp_rates, self.estimate_inf(samples), rule
+        print self.inf_bounds
 
         if self.should_stop(samples):
+            print map(len, datas), self.estimate_inf(samples), str(rule)[:40]
             node.set_score(self.estimate_inf(samples))
             return node
 
@@ -187,21 +194,24 @@ class BDTTablesPartitioner(Basic):
                 scores.append((new_rules, score))
 
         if not scores:
+            print map(len, datas), self.estimate_inf(samples), str(rule)[:40]
             node.set_score(self.estimate_inf(samples))
             return node
 
         new_rules, score = min(scores, key=lambda p: p[1])
+        all_new_srs = self.update_sample_rates(new_rules, datas, samp_rates)
 
-        try:
-            all_new_srs = self.update_sample_rates(new_rules, datas, samp_rates)
-        except:
-            pdb.set_trace()
-            all_new_srs = self.update_sample_rates(new_rules, datas, samp_rates)
         for new_rule, new_samp_rates in zip(new_rules, all_new_srs):
             child = self.grow(new_rule, datas, new_samp_rates)
             if child and child.n:
-                node.add_child(child)
+                if child.influence != -inf:
+                    node.add_child(child)
 
+        if len(node.children):
+            node.set_score(max([n.influence for n in node.children]))
+        else:
+            node.set_score(self.estimate_inf(samples))
+            print map(len, datas), self.estimate_inf(samples), str(rule)[:40]
         return node
 
 
@@ -255,19 +265,6 @@ class BDTTablesPartitioner(Basic):
         
 
 
-    def get_splits(self, rule, sample):
-        infavg = np.mean(map(self.influence, sample))
-        splits = Splits(infavg)
-        
-        if self.should_stop(sample):
-            return splits
-
-        for attr, new_rules in self.child_rules(rule):
-            new_samples = map(lambda r: r.filter_table(sample), new_rules)
-            score = sum(map(self.compute_score, enumerate(new_samples)))
-            splits.add_split(Split(attr, new_rules, score))
-
-        return splits
 
 
 
@@ -309,8 +306,6 @@ class BDT(Basic):
     def merge(self, clusters):
         start = time.time()
         thresh = compute_clusters_threshold(clusters)
-        for c in clusters:
-            c.error = self.influence(c)
         is_mergable = lambda c: c.error >= 0 #thresh
         params = dict(self.params)
         params.update({'cols' : self.cols,
@@ -325,6 +320,12 @@ class BDT(Basic):
         return merged_clusters
 
     def create_rtree(self, clusters):
+        if not len(clusters[0].bbox[0]):
+            class k(object):
+                def intersection(self, foo):
+                    return xrange(len(clusters))
+            return k()
+
         ndim = len(clusters[0].bbox[0]) + 1
         p = RProp()
         p.dimension = ndim
@@ -411,17 +412,21 @@ class BDT(Basic):
         hnodes.sort(key=lambda n: n.influence, reverse=True)
         hclusters = self.nodes_to_clusters(hnodes, full_table)
 
-        start = time.time()
-        clusters = self.intersect(bclusters, hclusters)
-        end = time.time()
-        n = 0
-        t = 0
-        for rule in clusters_to_rules(clusters, self.cols, self.full_table):
-            t += len(rule(self.full_table))
-            rows = [row['disb_amt'].value for row in rule(self.full_table) if row['disb_amt'] > 1500000]
-            n += len(rows)
-        print 'n high rows\t%d\t%d of %d' % (n, t, len(self.full_table))
 
+        print "==== Best Bad Clusters ===="
+        print '\n'.join(map(str, bnodes[:10]))
+        print "==== Best Good Clusters ===="
+        print '\n'.join(map(str, hnodes[:10]))
+
+
+        start = time.time()
+        _logger.debug('intersecting')
+        clusters = self.intersect(bclusters, hclusters)
+        _logger.debug('done in %d', time.time()-start)
+        for c in clusters:
+            c.error = self.influence(c)
+        clusters = filter(lambda c: c.error != -inf, clusters)
+        _logger.debug('computed influences  in %d', time.time()-start)
 
         self.final_clusters = self.merge(clusters)        
         self.all_clusters = clusters

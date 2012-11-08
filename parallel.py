@@ -2,6 +2,7 @@ import sys
 import time
 import pdb
 import traceback
+import errfunc
 
 from itertools import chain
 from collections import defaultdict
@@ -9,16 +10,18 @@ from datetime import datetime
 from multiprocessing import Process, Queue, Pool
 from Queue import Empty
 
-from bottomup.cluster import *
-from bottomup.bottomup import *
-from hybrid.hybrid import *
-from topdown.topdown import *
-from bottomup.svm import *
+#from bottomup.cluster import *
+#from bottomup.bottomup import *
+#from hybrid.hybrid import *
+#from topdown.topdown import *
+#from bottomup.svm import *
+
 
 from db import *
 from aggerror import *
 from arch import *
 from util import get_logger, rm_attr_from_domain, reconcile_tables
+from sigmod import *
 
 
 
@@ -91,22 +94,37 @@ def serial_hybrid(obj, aggerr, **kwargs):
         (bad_tables, good_tables), full_table = reconcile_tables(bad_tables, good_tables)
         _, full_table = reconcile_tables(bad_tables)
 
-        start = time.time()
-        hybrid = TopDown(aggerr=aggerr,
-                         cols=cols,
-                         **kwargs)
-                        # errperc=0.001,
-                        # 
-                        # msethreshold=0.01,
-                        # k=10,
-                        # nprocesses=4,
-                        # parallelize=True,
-                        # complexity_multiplier=1.5)
 
+        params = dict(kwargs)
+        params.update({
+            'aggerr':aggerr,
+            'cols':cols})
+            # errperc=0.001,
+            # 
+            # msethreshold=0.01,
+            # k=10,
+            # nprocesses=4,
+            # parallelize=True,
+            # complexity_multiplier=1.5)
+
+
+        if aggerr.agg.func in (errfunc.SumErrFunc, errfunc.CountErrFunc):
+            klass = MC
+        else:
+            klass = BDT
+
+
+        start = time.time()
+        hybrid = klass(**params)
         clusters = hybrid(full_table, bad_tables, good_tables)
         clusters = filter(lambda c: c.error >= 0, clusters)
         normalize_cluster_errors(clusters)
+        clusters.sort(key=lambda c: c.error, reverse=True)
         rules = clusters_to_rules(clusters, cols, full_table)
+        
+
+        pdb.set_trace()
+
         cost = time.time() - start
         ncalls = 0
     except:

@@ -246,7 +246,6 @@ def intel_debug():
                            msethreshold=0.15,
                            complexity_multiplier=4.5)
 
-            print obj.clauses
 
 
             context.update( {'query': obj.prettify_sql,

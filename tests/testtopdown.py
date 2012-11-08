@@ -12,9 +12,6 @@ from matplotlib import cm
 import matplotlib.pyplot as plt
 from collections import defaultdict
 
-from bottomup.cluster import *
-from topdown.topdown import *
-from clique.clique import *
 from db import *
 from score import *
 from aggerror import *
@@ -122,16 +119,16 @@ if __name__ == '__main__':
         
         errperc = 0.001
         np.seterr(all='raise')
-        topdown = MR(aggerr=obj.errors[0],
+        topdown = BDT(aggerr=obj.errors[0],
                           errperc=errperc,
-                          epsilon=0.003,
+                          epsilon=0.001,
                           cols=cols,
                           msethreshold=.25,
-                          tau=[0.001, 0.05],
+                          tau=[0.01, 0.15],
                           lamb=0.5,
                           min_pts = 1,
                           complexity_multiplier=1.5,
-                          c= .3)
+                          c= 1.3)
         clusters = topdown(full_table, bad_tables, good_tables)
         clusters = filter(lambda x:x, clusters)
 
@@ -141,8 +138,7 @@ if __name__ == '__main__':
 
         print "\n======Final Results====="
         print "Ideal: %d tuples" % len(get_ground_truth(full_table))
-        for r in clusters_to_rules(best_clusters, cols, table):
-            print [int(row['disb_amt'].value) for row in r.examples]
+        for r in clusters_to_rules(best_clusters[:10], cols, table):
             print '%.4f\t%d\t%s' % (r.quality, len(r.examples), sdrule_to_clauses(r)[0])
             acc, pre, rec = compute_stats(r, set(get_ground_truth(full_table)), full_table)
             print acc, pre, rec

@@ -8,7 +8,6 @@ sys.path.extend(['.', '..'])
 
 from itertools import chain
 from collections import defaultdict
-from scipy.spatial import KDTree
 from rtree.index import Index as RTree
 from rtree.index import Property as RProp
 from operator import mul, and_
@@ -69,8 +68,10 @@ class Merger(object):
 #        self.zero = Zero(range(len(self.cont_pos)), bounds=self.search_bbox)
 
     def setup_errors(self, clusters):
+        return
         errors = np.array([c.error for c in clusters])
         self.mean_error = np.mean(errors)
+        pdb.set_trace()
         self.std_error = np.std(errors)
         self.min_error = errors.min()
         self.max_error = errors.max()
@@ -106,6 +107,11 @@ class Merger(object):
                       filter(c2.discretes_intersect, intersecting_clusters))
 
     def construct_rtree(self, clusters):
+        if not len(clusters[0].bbox[0]):
+            class k(object):
+                def intersection(self, foo):
+                    return xrange(len(clusters))
+            return k()
         ndim = max(2, len(clusters[0].centroid))
         p = RProp()
         p.dimension = ndim
@@ -177,7 +183,8 @@ class Merger(object):
             rms.update(groups.get(True, []))
             neighbors = groups.get(False, [])
 
-            mergeds = sorted(map(f, neighbors), key=lambda n: n.error, reverse=True)
+            mergeds = filter(lambda c: c.error != -1e1000000,
+                             sorted(map(f, neighbors), key=lambda n: n.error, reverse=True))
 
             if not mergeds or mergeds[0] == cluster:
                 break
@@ -312,7 +319,6 @@ class Merger(object):
                             del id_to_cluster[idx]
 
 
-        #self.unnormalize_cluster_errors(clusters_set)
         return sorted(clusters_set, key=lambda c: c.error, reverse=True)
             
     

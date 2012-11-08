@@ -75,6 +75,21 @@ def gaussorder(u1, s1, u2, s2, nsteps=20.):
     
 
 
+def welchs_ttest(n1, mean1, sem1, n2, mean2, sem2, alpha):
+    svm1 = sem1**2 * n1
+    svm2 = sem2**2 * n2
+    if svm1 == 0 and svm2 == 0:
+        return 1.
+
+    t_s_prime = (mean1 - mean2)/math.sqrt(svm1/n1+svm2/n2)
+    return t_s_prime
+    t_alpha_df1 = scipy.stats.t.ppf(1-alpha/2, n1 - 1)
+    t_alpha_df2 = scipy.stats.t.ppf(1-alpha/2, n2 - 1)
+    t_alpha_prime = (t_alpha_df1 * sem1**2 + t_alpha_df2 * sem2**2) / \
+    (sem1**2 + sem2**2)
+    return abs(t_s_prime) > t_alpha_prime, t_s_prime, t_alpha_prime
+
+
 
 def prob_no_error(pop, errprob, npts):
     """
