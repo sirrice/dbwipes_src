@@ -15,9 +15,10 @@ from score import QuadScoreSample7
 from bottomup.bounding_box import *
 from bottomup.cluster import *
 from util import *
+from errfunc import ErrTypes
 
 
-
+inf = 1e100000000000
 
 class Basic(object):
 
@@ -28,13 +29,16 @@ class Basic(object):
         self.err_func = kwargs.get('err_func', self.aggerr.error_func.clone())
         self.merger = None
         self.params = {}
+        self.costs = {}
 
         self.bad_thresh = 0
         self.good_thresh = 0
-        self.min_pts = 5
+        self.min_pts = kwargs.get('min_pts', 5)
         self.max_bests = 20
+        self.max_complexity = kwargs.get('max_complexity', 4)
+        self.granularity = kwargs.get('granularity', 100)
 
-        self.lamb = kwargs.get('lamb', 0.5)
+        self.l = kwargs.get('l', 0.5)
         self.c = kwargs.get('c', 1.)
         self.bincremental = kwargs.get('bincremental', True)
         
@@ -59,8 +63,11 @@ class Basic(object):
         self.bad_err_funcs = [self.err_func.clone() for t in bad_tables]
         self.good_err_funcs = [self.err_func.clone() for t in good_tables]
 
-        for ef, t in zip(chain(self.bad_err_funcs, self.good_err_funcs),
-                         chain(bad_tables, good_tables)):
+        for ef, t in zip(self.bad_err_funcs, bad_tables):
+            ef.setup(t)
+
+        for ef, t in zip(self.good_err_funcs, good_tables):
+            ef.errtype.errtype = ErrTypes.EQUALTO
             ef.setup(t)
 
         domain = self.full_table.domain
@@ -80,6 +87,13 @@ class Basic(object):
 
         pass
 
+
+    def influence_cluster(self, cluster):
+        rule = cluster.to_rule(self.dummy_table, self.cols, cont_dists=self.cont_dists, disc_dists=self.disc_dists)
+        return Basic.influence(self, rule)
+
+
+
     def influence(self, rule):
         bdeltas, bcounts = self.bad_influences(rule)
         gdeltas, gcounts = self.good_influences(rule)
@@ -91,7 +105,7 @@ class Basic(object):
         
         binf = binfs and np.mean(binfs) or -1e10000000
         ginf = ginfs and max(ginfs) or 0
-        inf = self.lamb * binf - (1. - self.lamb) * ginf
+        inf = self.l * binf - (1. - self.l) * ginf
 
         rule.quality = inf
         return inf
@@ -132,8 +146,8 @@ class Basic(object):
         if minv == maxv:
             return [[-inf, inf]]
 
-        block = (maxv - minv) / 10.
-        ranges = [[minv + i*block, minv + (i+1)*block] for i in xrange(10)]
+        block = (maxv - minv) / self.granularity
+        ranges = [[minv + i*block, minv + (i+1)*block] for i in xrange(self.granularity)]
         ranges[0][0] = -inf
         ranges[-1][1] = inf
         return ranges

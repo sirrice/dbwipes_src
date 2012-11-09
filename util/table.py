@@ -125,7 +125,6 @@ def reconcile_tables(*all_tables):
 
     return tuple(translated_tables), full_table
 
-    print "translating"
     translate = lambda t: Orange.data.Table(domain, t.to_numpyMA('ac')[0].data)
     translated_tables = []
     for tables in all_tables:#shared_domain_tables:

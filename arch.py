@@ -56,7 +56,7 @@ def get_distribution(obj, aggerr, goodresults):
 def get_provenance(sharedobj, cols, keys):
     schema = sharedobj.rules_schema
     schema.update(cols)
-    _logger.debug( "get_provenance schema\t%s", schema)
+    #_logger.debug( "get_provenance schema\t%s", schema)
     rows = sharedobj.get_tuples(keys, attrs=schema)
     if not len(rows):
         return None
@@ -73,7 +73,7 @@ def get_provenance_split(sharedobj, cols, keys):
 
     gb = sharedobj.parsed.select.nonaggs[0]
     schema.append(str(gb))
-    _logger.debug( "get_provenance schema\t%s", schema)
+    #_logger.debug( "get_provenance schema\t%s", schema)
 
     
     rows = sharedobj.get_tuples(keys, attrs=schema)
@@ -136,9 +136,9 @@ def parse_debug_args(db, form, dbname=None):
     except:
         erreq = 0.
 
-    _logger.debug( "parse_args\tgood keys\t%s", goodkeys)
-    _logger.debug( "parse_args\tattrs\t%s", attrs)
-    _logger.debug( "parse_args\tbad tuples\t%s", errids.keys())
+    #_logger.debug( "parse_args\tgood keys\t%s", goodkeys)
+    #_logger.debug( "parse_args\tattrs\t%s", attrs)
+    #_logger.debug( "parse_args\tbad tuples\t%s", errids.keys())
     obj = SharedObj(db, sql, bad_tuple_ids=errids)
 
     ignore_attrs = set(obj.attrnames).difference(attrs)
@@ -258,7 +258,6 @@ class SharedObj(object):
             qobj.select = Select(attrs)
         if where:
             qobj.where.append(where)
-        print str(qobj)
         return query(self.db, str(qobj), params)
 
     def get_filter_dicts(self, *args, **kwargs):
@@ -367,11 +366,11 @@ def create_clauses(sharedobj):
         clauses = map(lambda rule:
                      ' or '.join(rule_to_clauses(rule)),
                      rules)
-        _logger.debug("#clauses pre  dedup %d", len(clauses))
+        #_logger.debug("#clauses pre  dedup %d", len(clauses))
         clauses = rm_dups(clauses, key=hash)
-        _logger.debug( "#clauses post dedup %d", len(clauses))
+        #_logger.debug( "#clauses post dedup %d", len(clauses))
         clauses = filter(filter_clause, clauses)
-        _logger.debug( "#clauses post filter %d", len(clauses))
+        #_logger.debug( "#clauses post filter %d", len(clauses))
         #clauses = clauses[:6]
         
         sharedobj.clauses[label] = clauses
@@ -444,14 +443,16 @@ def create_orange_table(rows, attrs, errids, rm_id_col=True):
         # strtypes = map(lambda c: isinstance(c, str), nonnulls[:20])
         # istypestr = reduce(operator.or_, strtypes) if strtypes else True
         bdiscrete = is_discrete(col)
-        if attr in ['epochid', 'xloc', 'yloc', 'est', 'height', 'width', 'atime', 'v', 'light', 'humidity']:
+        if attr in ['epochid', 'voltage', 'xloc', 'yloc', 'est', 'height', 'width', 'atime', 'v', 'light', 'humidity']:
             bdiscrete = False
+        if attr in ['recipient_zip', 'moteid']:
+            bdiscrete = True
 
         if bdiscrete:
-            _logger.debug( "create_table: discrete:\t%s", attr)
+            #_logger.debug( "create_table: discrete:\t%s", attr)
             feature = Orange.feature.Discrete(attr, values=map(str, set(col)))
         else:
-            _logger.debug( "create_table: continuous:\t%s", attr)
+            #_logger.debug( "create_table: continuous:\t%s", attr)
             try:
                 for ridx in xrange(len(col)):
                     if col[ridx] is None:
@@ -488,7 +489,7 @@ def create_orange_table(rows, attrs, errids, rm_id_col=True):
 
     rows = map(list, zip(*cols))
     nerrs = (1.0+len([v for v in errcol if v == '1']))/(1.0+len(errcol))
-    _logger.debug( "create_orange_table stats %d rows" , len(errcol) )
+    #_logger.debug( "create_orange_table stats %d rows" , len(errcol) )
     
     domain = Orange.data.Domain(features, errfea)
     data = Orange.data.Table(domain)

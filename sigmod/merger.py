@@ -10,7 +10,7 @@ from itertools import chain
 from collections import defaultdict
 from rtree.index import Index as RTree
 from rtree.index import Property as RProp
-from operator import mul, and_
+from operator import mul, and_, or_
 
 from util import rm_attr_from_domain, get_logger
 from util.table import *
@@ -19,27 +19,34 @@ from bottomup.cluster import *
 from zero import Zero
 
 _logger = get_logger()
+
 class AdjacencyGraph(object):
-    def __init__():
+    def __init__(self, clusters):
         self.graph = defaultdict(set)
         self.cid = 0
         self.clusters = []
         self.id2c = dict()
         self.c2id = dict()
 
+        map(self.insert, clusters)
+
     def insert(self, cluster):
         if cluster in self.graph:
             return
+
+        self.graph[cluster] = set()
+
+        for o in self.graph.keys():
+            if cluster != o and cluster.adjacent(o):
+                self.graph[cluster].add(o)
+                self.graph[o].add(cluster)
+        
 
         cid = len(self.clusters)
         self.clusters.append(cluster)
         self.id2c[cid] = cluster
         self.c2id[cluster] = cid
 
-        for o, oid in self.c2id.items():
-            if o.adjacent(cluster):
-                self.graph[cluster].add(o)
-                self.graph[o].add(cluster)
 
     def remove(self, cluster):
         if cluster not in self.graph:
@@ -47,6 +54,7 @@ class AdjacencyGraph(object):
 
         for neigh in self.graph[cluster]:
             self.graph[neigh].remove(cluster)
+        del self.graph[cluster]
 
         cid = self.c2id[cluster]
         del self.c2id[cluster]
@@ -54,7 +62,12 @@ class AdjacencyGraph(object):
         self.clusters[cid] = None
 
     def neighbors(self, cluster):
-        return self.graph[cluster]
+        if cluster in self.graph:
+            return self.graph[cluster]
+        ret = set()
+        for key in filter(cluster.adjacent, self.graph.keys()):
+            ret.update(self.graph[key])
+        return ret
 
 
 
@@ -192,30 +205,37 @@ class Merger(object):
         return ret
 
 
-    def expand(self, cluster, clusters, adjacency_matrix, id_to_cluster, rtree):
+    def expand(self, cluster, clusters, adj_graph, rtree):
         rms = set()
         while True:
-
-            nidxs = self.neighbors(cluster.idxs, adjacency_matrix)
-            neighbors = set(chain(*filter(lambda x:x, map(id_to_cluster.get, nidxs))))
+            neighbors = adj_graph.neighbors(cluster)
             f = lambda n: self.merge(cluster, n, clusters, rtree)
-            groups = dict(groupby(neighbors, cluster.contains))
-            rms.update(groups.get(True, []))
-            neighbors = groups.get(False, [])
+            
+            rms, tomerges = set(), list()
+            for n in neighbors:
+                if cluster.contains(n) or cluster.same(n, epsilon=0.05):
+                    rms.add(n)
+                else:
+                    tomerges.append(n)
 
-            mergeds = filter(lambda c: c.error != -1e1000000,
-                             sorted(map(f, neighbors), key=lambda n: n.error, reverse=True))
-
-            if not mergeds or mergeds[0] == cluster:
+            tomerges.sort(key=lambda n: n.error, reverse=True)
+            merged = None
+            for tomerge in tomerges:
+                merged = f(tomerge)
+                if merged.error == -1e100000:
+                    continue
+                if merged.error <= max(cluster.error, tomerge.error):
+                    continue
                 break
 
-            merged = mergeds[0]
-            if merged.error <= max(merged.parents[0].error, merged.parents[1].error):
+            if not merged:
                 break
-            print '\t',merged
+
+            _logger.debug('\t%s',merged)
 
             rms.update(merged.parents)
             cluster = merged
+        _logger.debug('\n')
         return cluster, rms
 
 
@@ -230,14 +250,8 @@ class Merger(object):
         self.set_params(**kwargs)
         self.setup_stats(clusters)
         clusters_set = set(clusters)
-        adjacency_matrix = self.setup_graph(clusters)
+        adj_matrix = AdjacencyGraph(filter(self.is_mergable, clusters))
 
-        # horrible hack to retrieve a merged cluster from the 
-        # contained cluster -- because adjacency matrix is computed once
-        id_to_cluster = defaultdict(set)
-        for mc in clusters:
-            for idx in mc.idxs:
-                id_to_cluster[idx].add(mc)
 
         results = []
 
@@ -250,9 +264,6 @@ class Merger(object):
             mergable_clusters = filter(self.is_mergable, cur_clusters)
             mergable_clusters.sort(key=lambda mc: mc.error, reverse=True)
             rtree = self.construct_rtree(cur_clusters)
-            for mc in cur_clusters:
-                for idx in mc.idxs:
-                    id_to_cluster[idx].add(mc)
 
 
             _logger.debug("# mergable clusters: %d\tout of\t%d",
@@ -262,6 +273,7 @@ class Merger(object):
                 break
 
 
+            map(mergable_clusters[0].adjacent, cur_clusters)
 
             merged_clusters, new_clusters = set(), set()
             seen = set()
@@ -270,7 +282,17 @@ class Merger(object):
                 if cluster in merged_clusters or cluster in new_clusters or cluster in seen:
                     continue
 
-                merged, rms = self.expand(cluster, cur_clusters, adjacency_matrix, id_to_cluster, rtree) 
+                skip = False
+                for test in chain(new_clusters, mergable_clusters):
+                    if test == cluster: continue
+                    if test.contains(cluster, .01):
+                        _logger.debug("skipped\n\t%s\n\t%s", str(cluster), str(test))
+                        skip = True
+                        break
+                if skip:
+                    continue
+
+                merged, rms = self.expand(cluster, cur_clusters, adj_matrix, rtree) 
                 if not merged or merged == cluster or len(filter(lambda c: c.contains(merged), cur_clusters)):
                     seen.add(cluster)
                     continue
@@ -296,14 +318,10 @@ class Merger(object):
                 break
 
 
+            map(adj_matrix.remove, merged_clusters)
+            map(adj_matrix.insert, new_clusters)
             clusters_set.difference_update(merged_clusters)
             clusters_set.update(new_clusters)
-            for mc in merged_clusters:
-                for idx in mc.idxs:
-                    if mc in id_to_cluster[idx]:
-                        id_to_cluster[idx].remove(mc)
-                        if not id_to_cluster[idx]:
-                            del id_to_cluster[idx]
 
 
         return sorted(clusters_set, key=lambda c: c.error, reverse=True)

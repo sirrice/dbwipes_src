@@ -20,6 +20,7 @@ from settings import *
 from basic import Basic
 
 inf = 1e10000000
+_logger = get_logger()
 
 class NDT(Basic):
 
@@ -39,27 +40,43 @@ class NDT(Basic):
                 vals=['0', '1'])
 
 
-        print "computing cutoffs" 
+        start = time.time()
+        _logger.debug( "computing cutoffs" )
         bad_cutoff = self.influence_cutoff(self.bad_tables, self.bad_err_funcs)
         good_cutoff = self.influence_cutoff(self.good_tables, self.good_err_funcs)
-        print "cutoffs\t%f\t%f" % (bad_cutoff, good_cutoff)
+        _logger.debug( "cutoffs\t%f\t%f" , bad_cutoff, good_cutoff)
+        self.cost_cutoff = time.time() - start
 
 
         import orngTree
-        print "creating training data"
+        start = time.time()
+        _logger.debug( "creating training data")
         training = self.create_training(bad_cutoff, good_cutoff)
-        training.domain.class_var = training.domain[self.CLASS_ID]
 
-        print "training on %d points" % len(training)
-        tree = Orange.classification.tree.C45Learner(training[:100], cf=0.001)
-        rules = c45_to_clauses(training, tree.tree)
+        _logger.debug( "training on %d points" , len(training))
+        tree = orngTree.TreeLearner(training)
+        rules = tree_to_clauses(training, tree.tree)
+        _logger.debug('\n'.join(map(lambda r: '\t%s' % r, rules)))
+#        tree = Orange.classification.tree.C45Learner(training, cf=0.001)
+#        rules = c45_to_clauses(training, tree.tree)
+        self.cost_learn = time.time() - start
 
         for rule in rules:
             rule.quality = self.influence(rule)
 
-        self.final_clusters = [Cluster.from_rule(rule, self.cols) for rule in rules]
-        self.all_clusters = self.final_clusters
+        clusters = [Cluster.from_rule(rule, self.cols) for rule in rules]
+        for cluster in clusters:
+            cluster.error = self.influence_cluster(cluster)
+        clusters = filter(lambda c: c.error != -1e10000000,clusters)
+
+
+        self.all_clusters = self.final_clusters = clusters
+
+        self.costs = {'cost_cutoff' : self.cost_cutoff,
+                'cost_learn' : self.cost_learn}
         return self.final_clusters
+
+
  
 
     def influence_cutoff(self, tables, err_funcs):
@@ -86,30 +103,37 @@ class NDT(Basic):
                 good_cutoff,
                 1e100000)
 
+        domain = self.bad_tables[0].domain
+        score_var = domain[self.SCORE_ID]
+        class_var = domain[self.CLASS_ID]
+        domain = list(self.bad_tables[0].domain)
+        domain = [a for a in domain if a.name in self.cols]
+        domain = Orange.data.Domain(domain, class_var)
+        domain.add_meta(self.SCORE_ID, score_var)
+        self.CLASS_ID = 'INFCLASS'
 
-        train_table = Orange.data.Table(self.bad_tables[0].domain)
+        train_table = Orange.data.Table(domain)
 
         for table in self.bad_tables:
             rule = SDRule(table, None)
             bad_rule = extend_bad(rule, table)
-            pos_matches = bad_rule.filter_table(table)
-            neg_matches =  bad_rule.cloneAndNegate().filter_table(table)
-            print "bad rule: %d\t%d\t%d\t%s" % (len(table), len(pos_matches), len(neg_matches), bad_rule)
+            pos_matches = Orange.data.Table(domain,bad_rule.filter_table(table))
+            neg_matches =  Orange.data.Table(domain,bad_rule.cloneAndNegate().filter_table(table))
 
             for row in pos_matches:
-                row[self.CLASS_ID] ='1'
+                row[class_var] ='1'
             for row in neg_matches:
-                row[self.CLASS_ID] ='0'
+                row[class_var] ='0'
+
             train_table.extend(pos_matches)
             train_table.extend(neg_matches)
-
 
         for table in self.good_tables:
             rule = SDRule(table, None)
             good_rule = extend_good(rule, table)
-            matches = good_rule.filter_table(table)
+            matches = Orange.data.Table(domain, good_rule.filter_table(table))
             for row in matches:
-                row[self.CLASS_ID] = '0'
+                row[class_var] = '0'
             train_table.extend(matches)
 
         return train_table
@@ -250,5 +274,33 @@ def rule_from_clauses(table, clauses):
             values=[Orange.data.Value(domain[pos], v) for v in vals]))
     
     return SDRule(table, None, conds)
+
+
+def tree_to_clauses(table, node, clauses=None):
+    clauses = clauses or []
+    if not node:
+        return []
+
+    ret = []
+    if node.branch_selector:
+        varname = node.branch_selector.class_var.name
+        var = table.domain[varname]
+        for branch, bdesc in zip(node.branches,
+                                 node.branch_descriptions):
+            if ( bdesc.startswith('>') or 
+                 bdesc.startswith('<') or 
+                 bdesc.startswith('=') ):
+                clauses.append( create_clause(table, var, bdesc))
+            else:
+                clauses.append( create_clause(table, var, bdesc) )
+            ret.extend( tree_to_clauses(table, branch, clauses) )
+            clauses.pop()
+    else:
+        major_class = node.node_classifier.default_value
+        if major_class == '1' and clauses:
+            ret.append(rule_from_clauses(table, clauses))
+
+    ret = filter(bool, ret)
+    return ret
 
 

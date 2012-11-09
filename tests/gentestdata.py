@@ -62,8 +62,7 @@ def get_intel_noon():
     FROM readings
     WHERE date+time > '2004-3-1'::timestamp and date+time < '2004-3-10'::timestamp
     GROUP BY dist ORDER BY dist"""
-    badresults = [64, 72, 126, 127, 65, 66, 67, 68, 74, 75, 76]
-    badresults = [122, 121, 124, 123, 125, 128, 129, 130, 131]
+    badresults = [64, 72, 126, 127, 65, 66, 67, 68, 74, 75, 76, 122, 121, 124, 123, 125, 128, 129, 130, 131]
     goodresults = [0, 1, 9, 10, 2, 3, 4, 5, 6, 7, 8, 11, 12]
 
     def get_ground_truth(table):
@@ -165,7 +164,8 @@ def get_fec12_obama():
 
 
     def get_ground_truth(table):
-        return [row['id'].value for row in table if 'GMMB' in row.domain['recipient_nm'].values[int(row['recipient_nm'])]] # row['disb_amt'].value > 1500000]
+        return [row['id'].value for row in table if row['disb_amt'].value > 1500000]
+#    if 'GMMB' in row.domain['recipient_nm'].values[int(row['recipient_nm'])]] # 
     return sql, badresults, goodresults, get_ground_truth
 
 
@@ -230,7 +230,7 @@ def get_harddata3_avg():
 def get_harddata4_sum():
     sql = """select sum(val), iter from multdim group by iter"""
     badresults = range(5)
-    goodresults = []#range(5, 10)
+    goodresults = range(5, 10)
 
     def get_ground_truth(table):
         return [row['id'].value for row in table if row['val'] >= 40]

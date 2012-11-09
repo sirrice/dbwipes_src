@@ -119,16 +119,19 @@ if __name__ == '__main__':
         
         errperc = 0.001
         np.seterr(all='raise')
-        topdown = BDT(aggerr=obj.errors[0],
+        topdown = MR(aggerr=obj.errors[0],
                           errperc=errperc,
-                          epsilon=0.001,
+                          epsilon=0.0005,
                           cols=cols,
                           msethreshold=.25,
-                          tau=[0.05, 0.15],
-                          lamb=0.5,
+                          tau=[0.05, 0.45],
+                          p = 0.8,
+                          l=0.3,
                           min_pts = 1,
                           complexity_multiplier=1.5,
-                          c= 0.5)
+                          min_improvement=.01,
+                          granularity=20,
+                          c=.1)
         clusters = topdown(full_table, bad_tables, good_tables)
         clusters = filter(lambda x:x, clusters)
 
@@ -146,13 +149,12 @@ if __name__ == '__main__':
             print acc, pre, rec
 
 
-#title = 'err=%.4f' % errperc
-#        if (best_clusters and
-#            max(len(c.centroid) for c in best_clusters) == 2 and
-#            min(len(c.centroid) for c in best_clusters) == 2):
-#            print_clusters(pp, all_clusters, title=title+' initial clusters')
-#            print_clusters(pp, clusters, title=title+' merged clusters')
-#            print_clusters(pp, best_clusters, title=title+' best merged clusters')
+        try:
+            print_clusters(pp, all_clusters, title="all clusters")
+            print_clusters(pp, clusters, title="merged clusters")
+            print_clusters(pp, best_clusters, title="best clusters")
+        except:
+            pass
 
 
 

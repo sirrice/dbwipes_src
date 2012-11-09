@@ -12,8 +12,8 @@ class ErrTypes(object):
         except:
             self.errtype = errtype
         self.erreq = erreq            
-        if self.errtype == ErrTypes.EQUALTO and erreq is None:
-            raise "Error Type EQUALTO needs a value"
+        #if self.errtype == ErrTypes.EQUALTO and erreq is None:
+        #    raise "Error Type EQUALTO needs a value"
 
 
     @staticmethod
@@ -26,10 +26,19 @@ class ErrTypes(object):
         if self.errtype == ErrTypes.TOOLOW:
             return newv - oldv
         if self.errtype == ErrTypes.EQUALTO:
-            return 1. / (abs(self.erreq - newv) + 1.)
+            return abs(self.erreq - newv)
         return abs(newv - oldv)
 
+    def clone(self):
+        return ErrTypes(self.errtype, erreq=self.erreq)
 
+def setup_wrapper(f):
+    def h(self, table):
+        ret = f(self, table)
+        if self.errtype.errtype == ErrTypes.EQUALTO:
+            self.errtype.erreq = ret
+        return ret
+    return h
 
 class BaseErrFunc(object):
     """
@@ -51,7 +60,8 @@ class BaseErrFunc(object):
         pass
 
     def set_errtype(self, errtype):
-        self.errtype = errtype
+        if errtype:
+            self.errtype = errtype.clone()
 
     def setup(self, table):
         self.domain = table.domain
@@ -97,6 +107,7 @@ class AggErrFunc(BaseErrFunc):
         map(lambda c: c.set_errtype(errtype), self.children)
         return self
 
+    @setup_wrapper
     def setup(self, table):
         BaseErrFunc.setup(self, table)
         domain = table.domain
@@ -123,6 +134,7 @@ class CorrErrFunc(AggErrFunc):
     def __init__(self, children):
         AggErrFunc.__init__(self, children, LinearFit)
 
+    @setup_wrapper
     def setup(self, table):
         BaseErrFunc.setup(self, table)
         domain = table.domain
@@ -204,6 +216,7 @@ class ArithErrFunc(BaseErrFunc):
         BaseErrFunc.set_errtype(self, errtype)
         map(lambda c: c.set_errtype(errtype), [self.l, self.r])
 
+    @setup_wrapper
     def setup(self, table):
         BaseErrFunc.setup(self, table)
         domain = table.domain
@@ -232,6 +245,7 @@ class AbsErrFunc(BaseErrFunc):
         ret.set_errtype(self.errtype)
         return ret
 
+    @setup_wrapper
     def setup(self, table):
         v = abs(self.child.setup(table))
         self.value = v
@@ -256,6 +270,7 @@ class Constant(BaseErrFunc):
     def clone(self):
         return self
 
+    @setup_wrapper
     def setup(self, table):
         return self.v
         return np.array([self.v] * len(table))

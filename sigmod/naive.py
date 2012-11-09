@@ -31,7 +31,8 @@ class Naive(Basic):
         self.setup_tables(full_table, bad_tables, good_tables, **kwargs)
         
         self.bests = []
-        self.max_complexity = kwargs.get('max_complexity', 4)
+        self.max_complexity = kwargs.get('max_complexity', self.max_complexity)
+        self.granularity = kwargs.get('granularity', self.granularity)
 
 
         self.all_clauses = map(self.all_unit_clauses, self.cols)
@@ -43,8 +44,18 @@ class Naive(Basic):
         # 2) append a new clause
 
         base_rule = SDRule(self.full_table, None)            
+        start = time.time()
         self.dfs(base_rule)
+        self.cost = time.time() - start
 
+        rules = self.bests
+
+        fill_in_rules(rules, full_table, cols=self.cols)
+        clusters = [Cluster.from_rule(rule, self.cols, rule.quality) for rule in rules]
+        self.all_clusters = clusters
+
+        self.costs = {'cost' : self.cost}
+        return clusters
 
 
     def dfs(self, rule, colidx=0):
@@ -58,9 +69,11 @@ class Naive(Basic):
             conds = rule.filter.conditions[:]
             conds.append(clause)
             new_rule = SDRule(rule.data, rule.targetClass, conds, rule.g)
-            print new_rule
 
-            self.influence(new_rule)
+            new_rule.quality = self.influence(new_rule)
+            if math.isnan(new_rule.quality) or new_rule.quality == -1e100000000:
+                continue
+
 
             if len(self.bests) < self.max_bests:
                 heapq.heappush(self.bests, new_rule)

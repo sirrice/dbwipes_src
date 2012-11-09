@@ -178,7 +178,7 @@ class Cluster(object):
         error = error or rule.quality
         return Cluster(bbox, error, cont_cols, parents=parents, discretes=discretes, npts=len(rule.examples))
 
-    def adjacent(self, o):
+    def adjacent(self, o, thresh=0.7):
         """@return True if they overlap on one or more continuous attribute, 
            and their discrete attributes intersect"""
         d_intersects =  self.discretes_intersect(o)
@@ -187,18 +187,39 @@ class Cluster(object):
 
         d_same = self.discretes_same(o)
         intersection = intersection_box(self.bbox, o.bbox)
-        if True or d_same:
-            diffs = map(lambda p:sub(*p), zip(*intersection))
+        make_diff = lambda bbox: map(lambda p:p[1]-p[0], zip(*bbox))
+        diffs = make_diff(intersection) 
+        mydiffs = make_diff(self.bbox)
+        odiffs = make_diff(o.bbox)
+
+        overlapping = [d for d, md, od in zip(diffs, mydiffs, odiffs) if d > 0 and d/max(md,od) > thresh]
+        if len(overlapping) > 0:
+            return True
+        return False
+
+
+        if False and d_same:
             return len(filter(lambda d: d < 0, diffs)) > 0
         return volume(intersection) >= 0.7 * min(self.volume, o.volume)
 
-    def contains(self, o):
+    def contains(self, o, epsilon=0.):
         for key in o.discretes.keys():
             if key in self.discretes:
                 diff = set(o.discretes[key]).difference(self.discretes[key])
                 if len(diff):
                     return False
-        return box_contained(o.bbox, self.bbox)
+        return box_contained(o.bbox, self.bbox, epsilon=epsilon)
+
+    def same(self, o, epsilon=0.):
+        for key in o.discretes.keys():
+            if key in self.discretes:
+                diff = set(o.discretes[key]).difference(self.discretes[key])
+                if len(diff):
+                    return False
+
+        return box_same(o.bbox, self.bbox, epsilon=epsilon)
+
+
 
     def discretes_same(self, o):
         mykeys = set(self.discretes.keys())
