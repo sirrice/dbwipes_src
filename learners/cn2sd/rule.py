@@ -163,7 +163,8 @@ class SDRule(object) :
             if bounds is None:
                 attr = domain[col]
                 pos = domain.index(attr)
-                vals = map(int, set(filteredarr[:,pos]))
+#                vals = map(int, set(filteredarr[:,pos]))
+                vals = range(len(attr.values))
                 vals = [orange.Value(attr, attr.values[v]) for v in vals]
                 cond = orange.ValueFilter_discrete(position=pos, values=vals)
             else:

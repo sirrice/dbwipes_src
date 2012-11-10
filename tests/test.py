@@ -156,6 +156,8 @@ if True:
     run(expid, 0, pp, klasses=[NDT], c=[0., 0.25, 0.5, 0.75, 1.])
     run(expid, 0, pp, klasses= [BDT], l=[0.5], c=[1.], epsilon=[0.0001, 0.001, 0.01, 0.1])
     run(expid, 0, pp, klasses= [BDT], l=[0.5], c=[0., 0.25, 0.5, 0.75, 1.], epsilon=[0.001])
+    run(expid, 0, pp, klasses=[MR], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.])
+    run(expid, 0, pp, klasses=[MR], max_wait=30*60, c=[0.], granularity=[20], naive=True)
     complete(db, expid)
     expid += 1
 
@@ -164,6 +166,7 @@ if True:
     run(expid, 11, pp, klasses=[BDT], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.], epsilon=[0.0001, 0.001])
     run(expid, 11, pp, klasses=[BDT], l=[.5], c=[1.], epsilon=[0.0001, 0.001, 0.01, 0.1])
     run(expid, 11, pp, klasses=[MR], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.])
+    run(expid, 11, pp, klasses=[MR], max_wait=30*60, c=[0.], granularity=[20], naive=True)
     complete(db, expid)
     expid += 1
 
@@ -171,7 +174,8 @@ if True:
     run(expid, 5, pp, klasses=[NDT], c=[0., 0.25, 0.5, 0.75, 1.])
     run(expid, 5, pp, klasses=[BDT], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.], epsilon=[0.0001, 0.001])
     run(expid, 5, pp, klasses=[BDT], l=[.5], c=[1.], epsilon=[0.0001, 0.001, 0.01, 0.1])
-    run(expid, 5, pp, klasses=[MR], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.])
+    run(expid, 5, pp, klasses=[MR], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.], granularity=[20])
+    run(expid, 5, pp, klasses=[MR], max_wait=30*60, c=[0.], granularity=[20], naive=True)
     complete(db, expid)
     expid += 1
 
@@ -179,7 +183,8 @@ if True:
     run(expid, 15, pp, klasses=[NDT], c=[0., 0.25, 0.5, 0.75, 1.])
     run(expid, 15, pp, klasses=[BDT], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.], epsilon=[0.0001, 0.001])
     run(expid, 15, pp, klasses=[BDT], l=[.5], c=[1.], epsilon=[0.0001, 0.001, 0.01, 0.1])
-    run(expid, 15, pp, klasses=[MR], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.])
+    run(expid, 15, pp, klasses=[MR], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.], granularity=[20])
+    run(expid, 15, pp, klasses=[MR], max_wait=30*60, c=[0.], granularity=[20], naive=True)
     complete(db, expid)
     expid += 1
 
@@ -187,10 +192,11 @@ if True:
 
     # run naive on intel_noon and increase the available columns
     # will take forever...
-    run(expid, 0, pp, klasses=[Naive], cols=['voltage'], granularity=[5])
-    run(expid, 0, pp, klasses=[Naive], cols=['voltage', 'humidity'], granularity=[5])
-    run(expid, 0, pp, klasses=[Naive], cols=['voltage', 'humidity', 'light'], max_complexity=3, granularity=[5])
-#    run(expid, 0, pp, klasses=[Naive], cols=['moteid'], granularity=[10])
+    run(expid, 0, pp, klasses=[MR], max_wait=30*60, cols=['voltage'], granularity=[20], naive=True)
+    run(expid, 0, pp, klasses=[MR], max_wait=30*60, cols=['voltage', 'humidity'], granularity=[20], naive=True)
+    run(expid, 0, pp, klasses=[MR], max_wait=30*60, cols=['voltage', 'humidity', 'light'], granularity=[20], naive=True)
+    run(expid, 0, pp, klasses=[MR], max_wait=30*60, cols=['moteid'], granularity=[20], naive=True)
+    run(expid, 0, pp, klasses=[MR], max_wait=30*60, granularity=[20], naive=True)
     complete(db, expid)
     expid += 1
 

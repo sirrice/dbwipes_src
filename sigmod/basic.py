@@ -153,22 +153,41 @@ class Basic(object):
         return ranges
 
 
-    def get_all_clauses(self, attr):
-        attrobj = self.full_table.domain[attr]
-        if attrobj.var_type == Orange.feature.Type.Discrete:
-            return self.all_discrete_clauses(attr)
-        return self.all_cont_clauses(attr)
+    def get_all_clauses(self, attr, max_card):
+        class Ret(object):
+            def __init__(self, attr, max_card, par):
+                self.attr = attr
+                self.max_card = max_card
+                self.par = par
 
-    def all_discrete_clauses(self, attr):
+            def __iter__(self):
+                attrobj = self.par.full_table.domain[self.attr]
+                if attrobj.var_type == Orange.feature.Type.Discrete:
+                    return self.par.all_discrete_clauses(self.attr, self.max_card)
+                else:
+                    return self.par.all_cont_clauses(self.attr)
+        return Ret(attr, max_card, self)
+
+            
+    def all_discrete_clauses(self, attr, max_card=None):
         all_vals = self.col_to_clauses[attr]
         attrobj = self.full_table.domain[attr]
         idx = self.full_table.domain.index(attrobj)
+        
+        if max_card:
+            for card in xrange(1, max_card+1):
+                for vals in combinations(all_vals, card):
+                    vals = [orange.Value(attrobj, value) for value in vals]
+                    yield orange.ValueFilter_discrete(
+                            position = idx,
+                            values = vals)
+        else:
+            for vals in powerset(all_vals):
+                vals = [orange.Value(attrobj, value) for value in vals]
+                yield orange.ValueFilter_discrete(
+                        position = idx,
+                        values = vals)
 
-        for vals in powerset(all_vals):
-            vals = [orange.Value(attrobj, value) for value in vals]
-            yield orange.ValueFilter_discrete(
-                    position = idx,
-                    values = vals)
 
     def all_cont_clauses(self, attr):
         units = self.col_to_clauses[attr]

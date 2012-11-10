@@ -81,7 +81,7 @@ if __name__ == '__main__':
 
     def strip_columns(table, aggerr):
         cols = [attr.name for attr in table.domain
-                if attr.name not in ['id', 'err', 'epochid', 'date', 'memo_text', 'disb_desc'] and attr.name not in aggerr.agg.cols]
+                if attr.name not in ['id', 'err', 'epochid', 'date'] and attr.name not in aggerr.agg.cols]
         all_cols = cols + aggerr.agg.cols
         torm = [attr.name for attr in table.domain if attr.name not in all_cols]
         table = rm_attr_from_domain(table, torm)
@@ -130,8 +130,10 @@ if __name__ == '__main__':
                           min_pts = 1,
                           complexity_multiplier=1.5,
                           min_improvement=.01,
-                          granularity=20,
-                          c=.1)
+                          granularity=10,
+                          max_wait=None,
+                          naive=False,#True,
+                          c=0.)
         clusters = topdown(full_table, bad_tables, good_tables)
         clusters = filter(lambda x:x, clusters)
 

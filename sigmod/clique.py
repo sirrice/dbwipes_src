@@ -246,7 +246,7 @@ class Grouper(object):
             bad_table_rows.append(self.table_influence(attrs, valid_groups, table))
         for table in self.mr.good_tables:
             good_table_rows.append(self.table_influence(attrs, valid_groups, table))
-        print "scan time\t", (time.time() - start)
+#        print "scan time\t", (time.time() - start)
 
         def get_infs(all_table_rows, err_funcs, g, bmaxinf):
             ret = []
@@ -265,16 +265,14 @@ class Grouper(object):
             return ret, counts, maxinf
 
 
-        ret = []
         start = time.time()
         for g in valid_groups:
             bds, bcs, maxinf = get_infs(bad_table_rows, self.mr.bad_err_funcs, g, True)
             gds, gcs, _ = get_infs(good_table_rows, self.mr.good_err_funcs, g, False)
             if not bcs:
                 continue
-            ret.append(Blah(attrs, g, bds, bcs, gds, gcs, maxinf, self.mr, self))
-        print "comp infs\t", (time.time() - start)
-        return ret
+            yield Blah(attrs, g, bds, bcs, gds, gcs, maxinf, self.mr, self)
+#        print "comp infs\t", (time.time() - start)
 
 
     def influence_tuple(self, row, ef):
@@ -361,6 +359,11 @@ class MR(Basic):
     def __init__(self, *args, **kwargs):
         Basic.__init__(self, *args, **kwargs)
         self.best = []
+        self.max_wait = kwargs.get('max_wait', 2 * 60 * 60) # 2 hours
+        self.start = None
+        self.stop = False
+        self.n_rules_checked = 0
+        self.naive = kwargs.get('naive', False)
 
     def setup_tables(self, full_table, bad_tables, good_tables, **kwargs):
         Basic.setup_tables(self, full_table, bad_tables, good_tables, **kwargs)
@@ -394,9 +397,16 @@ class MR(Basic):
 
         for attrs, groups in new_groups.items():
             start = time.time()
-            rules[attrs] = self.grouper(attrs, groups)
-            #print "group by\t%s\t%.4f" % (str([attr.name for attr in attrs]), time.time()-start)
-        return rules
+            for ro in self.grouper(attrs, groups):
+                if self.max_wait:
+                    self.n_rules_checked += 1
+                    if self.n_rules_checked % 1000 == 0:
+                        if time.time() - self.start > self.max_wait:
+                            self.stop = True
+                    if self.stop:
+                        return
+                yield attrs, ro
+#            print "group by\t%s\t%.4f" % (str([attr.name for attr in attrs]), time.time()-start)
 
 
 
@@ -408,14 +418,19 @@ class MR(Basic):
 
         rules = None
         self.best = []
-        start = time.time()
+        self.start = time.time()
+
         
-        while rules is None or rules:
+        while not self.stop and (rules is None or rules):
             besthash = hash(tuple(self.best))
-            
-            new_rules = self.make_rules(rules)
-            nadded = self.top_k(chain(*new_rules.values()))
-            pruned_rules = self.prune_rules(new_rules)
+
+            nadded = 0
+            new_rules = defaultdict(list)
+            for attr, ro in self.make_rules(rules):
+                nadded += self.top_k((ro,))
+                if self.naive or self.prune_rule(ro):
+                    new_rules[attr].append(ro)
+            pruned_rules = new_rules
 
 
             _logger.debug("bad thresh\t%f" , self.bad_thresh)
@@ -424,14 +439,12 @@ class MR(Basic):
             f = lambda ro: '\tr/g %.4f - %.4f\tinf %.4f\tpts %d/%d\t%s' % (ro.bad_inf, ro.good_inf, ro.inf, ro.bad_npts, ro.good_npts, str(ro.rule))
             _logger.debug('\n'.join(map(f, self.best)))
 
-            
             if not nadded: 
                 break
 
-
             rules = pruned_rules
 
-        self.cost_clique = time.time() - start
+        self.cost_clique = time.time() - self.start
 
 
 
