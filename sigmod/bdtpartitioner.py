@@ -166,9 +166,9 @@ class BDTTablesPartitioner(Basic):
             counts = []
             for n, mean, std, maxinf, mininf in stats:
                 thresh = self.compute_threshold(maxinf)
-                scores.append( (self.inf_bounds[1]-thresh) * (std - thresh) )
+                scores.append( ((thresh - self.inf_bounds[0]) / (self.inf_bounds[1]-self.inf_bounds[0])) * (std - thresh) )
                 counts.append(n)
-            return wmean(scores, counts)#ret
+            return np.mean(scores)#wmean(scores, counts)#ret
                 
             args = stats[0] + stats[1] + (0.05,)
             return welchs_ttest(*args)
@@ -181,14 +181,14 @@ class BDTTablesPartitioner(Basic):
         f = lambda row: self.influence(row, idx)
         try:
             infs = map(f, data)
-            return len(infs), np.mean(infs), np.std(infs), max(infs), min(infs)
+            return len(infs), wmean(infs, infs), np.std(infs), max(infs), min(infs)
         except:
             pdb.set_trace()
 
 
     def merge_scores(self, scores):
         if scores:
-            return max(scores)
+            return np.mean(scores)
         return -inf
 
     def print_status(self, rule, samples):
@@ -201,6 +201,17 @@ class BDTTablesPartitioner(Basic):
         _logger.debug( '%s\t%4f - %4f\t%.4f\t%.4f : %.4f : %.4f\t%.4f\t%s' , self.should_stop(samples), self.inf_bounds[0], self.inf_bounds[1], maxstd, minmin, uu, maxmax, minthresh, str(rule))
 
  
+    def in_box(self, node):
+        xb, yb = False, False
+        for c in node.rule.filter.conditions:
+            attr = self.merged_table.domain[c.position]
+            if attr.name == 'x':
+                if c.min >= 35 and c.max <= 65:
+                    xb = True
+            elif attr.name == 'y':
+                if c.min >= 35 and c.max <= 65:
+                    yb = True
+        return xb and yb
         
     def grow(self, node, tables, samp_rates):
         rule = node.rule
@@ -219,10 +230,20 @@ class BDTTablesPartitioner(Basic):
             node.set_score(self.estimate_inf(samples))
             return node
 
+        if self.in_box(node):
+            #pdb.set_trace()
+            pass
+
         attr_scores = []
         for attr, new_rules in self.child_rules(rule):
             scores = self.get_scores(new_rules, samples)
+            if not scores:
+                continue
             score = self.merge_scores(scores)
+            if attr == node.prev_attr:
+                score = score + (0.1) * abs(score)
+            if attr.var_type == Orange.feature.Type.Discrete:
+                score = score - (0.05) * abs(score)
             if score != -inf:
                 attr_scores.append((attr, new_rules, score, scores))
 
@@ -232,9 +253,10 @@ class BDTTablesPartitioner(Basic):
 
         attr, new_rules, score, scores = min(attr_scores, key=lambda p: p[-1])
         node.score = min(scores)
-        minscore = (1. - self.min_improvement) * self.get_score_for_samples(samples)
-        if min(scores) >= minscore:
-            _logger.debug("score didin't improve\t%.4f >= %.4f", min(scores), minscore)
+        minscore = self.get_score_for_samples(samples)
+        minscore = minscore - abs(minscore) * self.min_improvement
+        if min(scores) >= minscore and minscore != -inf:
+            _logger.debug("score didn't improve\t%.7f >= %.7f", min(scores), minscore)
             node.set_score(self.estimate_inf(samples))
             return node
 
@@ -261,9 +283,17 @@ class BDTTablesPartitioner(Basic):
     def child_rules(self, rule, attrs=None):
         attrs = attrs or self.cols
         next_rules = defaultdict(list)
-        refiner = BeamRefiner(attrs=attrs, fanout=2)
-        for attr, new_rule in refiner(rule):
-            next_rules[attr].append(new_rule)
+        cont_attrs = [attr.name for attr in self.merged_table.domain if attr.name in attrs and attr.var_type != Orange.feature.Type.Discrete]
+        dist_attrs = [attr.name for attr in self.merged_table.domain if attr.name in attrs and attr.var_type == Orange.feature.Type.Discrete]
+
+        if cont_attrs:
+            refiner = BeamRefiner(attrs=cont_attrs, fanout=2)
+            for attr, new_rule in refiner(rule):
+                next_rules[attr].append(new_rule)
+        if dist_attrs:
+            refiner = BeamRefiner(attrs=dist_attrs, fanout=5)
+            for attr, new_rule in refiner(rule):
+                next_rules[attr].append(new_rule)
         return next_rules.items()
 
 

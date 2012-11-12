@@ -31,6 +31,7 @@ class SDRule(object) :
         self.quality = None
         self.score = 0.
         self.score_norm = None
+        self.isbest = False
 
         self.stats_mean = None
         self.stats_std = None

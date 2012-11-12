@@ -121,29 +121,28 @@ if __name__ == '__main__':
         np.seterr(all='raise')
         topdown = MR(aggerr=obj.errors[0],
                           errperc=errperc,
-                          epsilon=0.0005,
+                          epsilon=0.00051,
                           cols=cols,
                           msethreshold=.25,
-                          tau=[0.05, 0.45],
-                          p = 0.8,
-                          l=0.3,
-                          min_pts = 1,
-                          complexity_multiplier=1.5,
+                          tau=[0.1, 0.55],
+                          p = 0.6,
+                          l=0.5,
+                          min_pts = 3,
                           min_improvement=.01,
                           granularity=10,
-                          max_wait=None,
+                          max_wait=5*60,#None,
                           naive=False,#True,
-                          c=0.)
+                          c=.55)
         clusters = topdown(full_table, bad_tables, good_tables)
         clusters = filter(lambda x:x, clusters)
 
         all_clusters = normalize_cluster_errors([c.clone() for c in topdown.all_clusters])
         clusters = normalize_cluster_errors([c.clone() for c in clusters])
-        best_clusters = filter_top_clusters(clusters, nstds=1)
+        best_clusters = sorted(clusters, key=lambda c: c.error, reverse=True)
 
         print "\n======Final Results====="
         print "Ideal: %d tuples" % len(get_ground_truth(full_table))
-        for r in clusters_to_rules(best_clusters[:10], cols, table):
+        for r in clusters_to_rules(best_clusters[:5], cols, table):
             r = r.simplify()
 
             print '%.4f\t%d\t%s' % (r.quality, len(r.examples), sdrule_to_clauses(r)[0])

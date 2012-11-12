@@ -67,9 +67,9 @@ class BDT(Basic):
         return clusters 
 
 
-    def merge(self, clusters):
+    def merge(self, clusters, thresh):
         start = time.time()
-        thresh = compute_clusters_threshold(clusters)
+        #thresh = thresh is None and compute_clusters_threshold(clusters) or thresh
         is_mergable = lambda c: c.error >= thresh
         params = dict(self.params)
         params.update({'cols' : self.cols,
@@ -151,7 +151,7 @@ class BDT(Basic):
                     continue
                 else:
                     for cluster in chain(intersects, excludes):
-                        cluster.good_inf, cluster.bad_inf = hc.error, c.error
+                        cluster.good_inf, cluster.bad_inf, cluster.error = hc.error, c.error, c.error
                     bqueue.extendleft(intersects)
                     bqueue.extendleft(excludes)
                     break
@@ -162,6 +162,7 @@ class BDT(Basic):
                 ret.append(c)
 
         _logger.info( "intersection %d untouched, %d split" , len(low_influence), len(ret))
+        ret.extend(low_influence)
         return ret
 
 
@@ -177,14 +178,13 @@ class BDT(Basic):
 
         start = time.time()
         bpartitioner = BDTTablesPartitioner(**params)
-        bnodes = list(bpartitioner(bad_tables, full_table))
-        #bnodes = list(bpartitioner([full_table], full_table))
+        #bnodes = list(bpartitioner(bad_tables, full_table))
+        bnodes = list(bpartitioner([full_table], full_table))
         bnodes.sort(key=lambda n: n.influence, reverse=True)
         bclusters = self.nodes_to_clusters(bnodes, full_table)
         self.cost_partition_bad = time.time() - start
 
         _logger.debug('\npartitioning bad tables done\n')
-
 
         start = time.time()
         err_func = params['aggerr'].error_func.clone()
@@ -192,7 +192,7 @@ class BDT(Basic):
         params['err_func'] = err_func
         hpartitioner = BDTTablesPartitioner(**params)
         hpartitioner.inf_bounds = bpartitioner.inf_bounds
-        hnodes = list(hpartitioner(good_tables, full_table))
+        hnodes = list(hpartitioner([good_tables[0]], full_table))
         hnodes.sort(key=lambda n: n.influence, reverse=True)
         hclusters = self.nodes_to_clusters(hnodes, full_table)
         self.cost_partition_good = time.time() - start
@@ -209,17 +209,34 @@ class BDT(Basic):
         _logger.debug('done in %d', time.time()-start)
         self.cost_split = time.time() - start
 
+
         start = time.time()
         _logger.debug("computing influences on %d", len(clusters))
-        for idx, c in enumerate(clusters):
-            c.mean_inf = c.error
-        clusters = filter(lambda c: c.mean_inf != -inf, clusters)
+        clusters = filter(lambda c: c.error != -1e10000000, clusters)
+        clusters.sort(key=lambda c: c.error, reverse=True)
+        thresh = min(clusters, key=lambda c: c.error).error
+        _ = filter(lambda c: c.error >= thresh, clusters)
+        n = len(_)
+        _ = set(clusters[:n])
+        for c in clusters:
+            c.error = 0
+        thresh = None
+        for c in _:
+            c.error = self.influence_cluster(c)
+            if math.isnan(c.error) or math.isinf(c.error): 
+                continue
+            thresh = thresh is None and c.error or min(thresh, c.error)
+        for c in clusters:
+            if c not in _:
+               c.error = thresh - 10*thresh
+        clusters = filter(lambda c: not math.isinf(c.error), clusters)
+        self.all_clusters = clusters
         _logger.debug('computed influences  in %d', time.time()-start)
 
 
         _logger.debug('merging')
-        self.final_clusters = self.merge(clusters)        
-        self.all_clusters = clusters
+        self.final_clusters = self.merge(clusters, thresh)        
+        self.final_clusters = filter(lambda c: not math.isinf(c.error) and not math.isnan(c.error), self.final_clusters)
         self.cost_merge = time.time() - start
 
 

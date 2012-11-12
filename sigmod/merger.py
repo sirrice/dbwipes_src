@@ -37,7 +37,7 @@ class AdjacencyGraph(object):
         self.graph[cluster] = set()
 
         for o in self.graph.keys():
-            if cluster != o and cluster.adjacent(o):
+            if cluster != o and cluster.adjacent(o, 0.8):
                 self.graph[cluster].add(o)
                 self.graph[o].add(cluster)
         
@@ -213,28 +213,42 @@ class Merger(object):
             
             rms, tomerges = set(), list()
             for n in neighbors:
-                if cluster.contains(n) or cluster.same(n, epsilon=0.05):
+                if n.error <= cluster.error:
+                    continue
+                if n in rms or cluster.contains(n) or cluster.same(n, epsilon=0.02):
                     rms.add(n)
                 else:
                     tomerges.append(n)
 
-            tomerges.sort(key=lambda n: n.error, reverse=True)
+            tomerges.sort(key=lambda n: (cluster.volume + n.volume) / volume(bounding_box(cluster.bbox, n.bbox)))
             merged = None
+            reasons = []
             for tomerge in tomerges:
-                merged = f(tomerge)
-                if merged.error == -1e100000:
+                _merged = f(tomerge)
+                if _merged.error == -1e10000000:
+                    reasons.append('e')
                     continue
-                if merged.error <= max(cluster.error, tomerge.error):
+                if math.isnan(_merged.error):
+                    reasons.append('n')
                     continue
+                if _merged.error <= max(cluster.error, tomerge.error):
+                    reasons.append('<%.4f'%_merged.error)
+                    continue
+                merged = _merged
+                reasons.append('!')
                 break
 
+            _logger.debug("neighbors: %d\t%s", len(neighbors), cluster)
+            _logger.debug("reason   :%s", ''.join(reasons))
             if not merged:
                 break
 
-            _logger.debug('\t%s',merged)
+            _logger.debug('\tmerged:\t%s',merged)
 
             rms.update(merged.parents)
             cluster = merged
+            adj_graph.insert(merged)
+
         _logger.debug('\n')
         return cluster, rms
 
@@ -250,19 +264,18 @@ class Merger(object):
         self.set_params(**kwargs)
         self.setup_stats(clusters)
         clusters_set = set(clusters)
-        adj_matrix = AdjacencyGraph(filter(self.is_mergable, clusters))
+        adj_matrix = AdjacencyGraph(clusters)
 
 
         results = []
 
 
-
+        mergable_clusters = filter(self.is_mergable, clusters)
+        mergable_clusters.sort(key=lambda mc: mc.error, reverse=True)
+ 
         while len(clusters_set) > self.min_clusters:
-            self.setup_errors(clusters_set)
 
             cur_clusters = sorted(clusters_set, key=lambda c: c.error, reverse=True)
-            mergable_clusters = filter(self.is_mergable, cur_clusters)
-            mergable_clusters.sort(key=lambda mc: mc.error, reverse=True)
             rtree = self.construct_rtree(cur_clusters)
 
 
@@ -286,15 +299,18 @@ class Merger(object):
                 for test in chain(new_clusters, mergable_clusters):
                     if test == cluster: continue
                     if test.contains(cluster, .01):
-                        _logger.debug("skipped\n\t%s\n\t%s", str(cluster), str(test))
+                        #_logger.debug("skipped\n\t%s\n\t%s", str(cluster), str(test))
                         skip = True
                         break
                 if skip:
+                    _logger.debug("skipped\n\t%s\n\t%s", str(cluster), str(test))
                     continue
 
                 merged, rms = self.expand(cluster, cur_clusters, adj_matrix, rtree) 
                 if not merged or merged == cluster or len(filter(lambda c: c.contains(merged), cur_clusters)):
                     seen.add(cluster)
+                    continue
+                if math.isnan(merged.error) or merged.error == -1e1000000:
                     continue
                 
                 _logger.debug("%.4f\t%.4f\t-> %.4f",
@@ -302,6 +318,7 @@ class Merger(object):
                                merged.parents[1].error,
                                merged.error)
                 seen.update(merged.parents)
+                seen.update(rms)
 
 
                 if merged not in cur_clusters:
@@ -322,8 +339,9 @@ class Merger(object):
             map(adj_matrix.insert, new_clusters)
             clusters_set.difference_update(merged_clusters)
             clusters_set.update(new_clusters)
+            mergable_clusters = sorted(new_clusters, key=lambda c: c.error, reverse=True)
 
-
+        clusters_set = filter(lambda c: c.error != -1e10000000, clusters_set) 
         return sorted(clusters_set, key=lambda c: c.error, reverse=True)
             
     

@@ -100,7 +100,7 @@ class Basic(object):
         gdeltas = map(abs, gdeltas)
         
         binfs = [bdelta/(bcount**self.c) for bdelta,bcount in zip(bdeltas, bcounts) if bcount]
-        ginfs = [gdelta/(gcount**self.c) for gdelta,gcount in zip(gdeltas, gcounts) if gcount]
+        ginfs = [gdelta for gdelta,gcount in zip(gdeltas, gcounts) if gcount]
 
         
         binf = binfs and np.mean(binfs) or -1e10000000

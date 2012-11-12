@@ -21,26 +21,25 @@ from sigmod import *
 
 matplotlib.use("Agg")
 
+def get_row_ids(r, table):
+    return set([row['id'].value for row in r(table)])
 
 
-
-def compute_stats(r, bad_tuple_ids, table):
-    all_found_ids = set()
-
-    indiv_stats = []
-    found_ids = set([row['id'].value for row in r(table)])
-    all_found_ids.update(found_ids)
+def compute_stats(found_ids, bad_tuple_ids, table_size):
+    bad_tuple_ids = set(bad_tuple_ids)
+    found_ids = set(found_ids)
     n = len(found_ids)        
     tp = len(bad_tuple_ids.intersection(found_ids))
     fn = len(bad_tuple_ids.difference(found_ids))
     fp = len(found_ids.difference(bad_tuple_ids))
-    tn = len(table) - tp - fn - fp
+    tn = table_size - tp - fn - fp
 
-    accuracy = float(tp + tn) / len(table)
+    accuracy = float(tp + tn) / table_size
     precision = float(tp) / (tp + fp) if n and (tp+fp) else 0.
     recall = float(tp) / (tp + fn) if n and (tp+fn) else 0.
+    f1 = (precision*recall*2.) / (precision+recall) if precision+recall > 0 else 0.
 
-    return accuracy, precision, recall, r.quality, r
+    return accuracy, precision, recall, f1
 
 def kname(klass):
     return klass.__name__[-7:]
@@ -90,7 +89,7 @@ def get_parameters(datasetidx, **kwargs):
     return full_table, bad_tables, good_tables, truth, aggerr, cols
  
 
-def get_clusters(full_table, bad_tables, good_tables, **kwargs):
+def get_rules(full_table, bad_tables, good_tables, **kwargs):
     klass = kwargs['klass']
 
     learner = klass(**kwargs)
@@ -108,13 +107,15 @@ def get_clusters(full_table, bad_tables, good_tables, **kwargs):
     best_clusters = filter_top_clusters(clusters, nstds=1)
 
     cols = kwargs['cols']
-    best = list(clusters_to_rules(best_clusters, cols, full_table))
+    
+    thresh = compute_clusters_threshold(clusters)
+    for c in clusters:
+        c.isbest = (c.error >= thresh)
     merged = list(clusters_to_rules(clusters, cols, full_table))
-    allr = list(clusters_to_rules(all_clusters, cols, full_table))
+    merged = [r.simplify() for r in merged]
 
-    simplify = lambda rules: map(lambda r: r.simplify(), rules)
-    best, merged, allr = map(simplify, (best, merged, allr)) 
-    return cost, costs, best, merged, allr
+    costs['cost_total'] = cost
+    return costs, merged, learner
 
 def run_experiment(datasetidx, **kwargs):
     print kwargs
@@ -132,7 +133,10 @@ def run_experiment(datasetidx, **kwargs):
         'cols' : cols
         })
 
-    cost, costs, best, merged, allr = get_clusters(ft, bts, gts, **params)
+    costs, rules, learner = get_rules(ft, bts, gts, **params)
+    ids = [get_row_ids(rule, ft) for rule in rules]
+    return costs, rules, ids, len(ft), learner
+
 
     f_stats = lambda r: compute_stats(r, truth, ft)
 
@@ -143,22 +147,5 @@ def run_experiment(datasetidx, **kwargs):
 
 
 
-
-
-    print "\n======Final Results====="
-    print "Ideal: %d tuples" % len(get_ground_truth(full_table))
-    for r in clusters_to_rules(best_clusters[:10], cols, table):
-        r = r.simplify()
-
-        print '%.4f\t%d\t%s' % (r.quality, len(r.examples), sdrule_to_clauses(r)[0])
-        acc, pre, rec = compute_stats(r, set(get_ground_truth(full_table)), full_table)
-        print acc, pre, rec
-
-
-    try:
-        print_clusters(pp, all_clusters, title="all clusters")
-        print_clusters(pp, best_clusters, title="best clusters")
-    except:
-        pass
 
 

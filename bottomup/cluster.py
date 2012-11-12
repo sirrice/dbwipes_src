@@ -192,7 +192,7 @@ class Cluster(object):
         mydiffs = make_diff(self.bbox)
         odiffs = make_diff(o.bbox)
 
-        overlapping = [d for d, md, od in zip(diffs, mydiffs, odiffs) if d > 0 and d/max(md,od) > thresh]
+        overlapping = [d for d, md, od in zip(diffs, mydiffs, odiffs) if d > 0 and d/md > thresh]
         if len(overlapping) > 0:
             return True
         return False

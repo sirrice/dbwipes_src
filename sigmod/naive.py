@@ -31,6 +31,8 @@ class Naive(Basic):
         self.n_rules_checked = 0
         self.stop = False
 
+        self.checkpoints = []
+
 
     def __call__(self, full_table, bad_tables, good_tables, **kwargs):
         """
@@ -41,7 +43,8 @@ class Naive(Basic):
         self.bests = []
         self.max_complexity = kwargs.get('max_complexity', self.max_complexity)
         self.granularity = kwargs.get('granularity', self.granularity)
-        discretes = [attr for attr in full_table.domain if attr.var_type == Orange.feature.Type.Discrete]
+        discretes = [attr for attr in full_table.domain 
+                     if attr.name in self.cols and attr.var_type == Orange.feature.Type.Discrete]
 
 
         self.all_clauses = map(self.all_unit_clauses, self.cols)
@@ -92,26 +95,32 @@ class Naive(Basic):
             if len(cols) > self.max_complexity:
                 continue
 
-            print cols
+            _logger.debug(str( cols))
             all_clauses = [self.get_all_clauses(col, max_card) for col in cols]
             for clauses in self.dfs(*all_clauses):
                 new_rule = SDRule(rule.data, None, clauses, None)
+                
+                self.n_rules_checked -= len(clauses)
+                if self.n_rules_checked <= 0:
+                    diff = time.time() - self.start
+                    if not self.checkpoints or diff - self.checkpoints[-1][0] > 10:
+                        if self.bests:
+                            best_rule = max(self.bests, key=lambda r: r.quality)
+                            self.checkpoints.append((diff, best_rule))
+                    self.stop = diff > self.max_wait
+                    self.n_rules_checked = 100
 
-                self.n_rules_checked += 1
-                if self.n_rules_checked % 100 == 0:
-                    print "%.4f\t%d" % (time.time() - self.start, self.n_rules_checked)
-                    print new_rule
-                    if time.time() - self.start > self.max_wait:
-                        self.stop = True
-                        return
+                    _logger.debug( "%.4f\t%d", time.time() - self.start, self.n_rules_checked)
+                    _logger.debug(str( new_rule))
 
                 if self.stop:
                     return
 
-                if max_card and self.max_card_in_conds(clauses) < max_card:
+                if max_card is not None and self.max_card_in_conds(clauses) < max_card:
                     continue
 
                 new_rule.quality = self.influence(new_rule)
+                new_rule.__examples__ = None
                 if math.isnan(new_rule.quality) or new_rule.quality == -1e100000000:
                     continue
 
