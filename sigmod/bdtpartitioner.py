@@ -40,6 +40,10 @@ class Node(object):
         self.prev_attr = None
         self.score = inf
 
+
+        self.cards = None # caches the cardinality of in each input group
+        self.states = None # caches M-tuples
+
     def set_score(self, score):
         self.influence = score
 
@@ -212,6 +216,46 @@ class BDTTablesPartitioner(Basic):
                 if c.min >= 35 and c.max <= 65:
                     yb = True
         return xb and yb
+
+
+    def get_states(self, tables):#node):
+        #tables = map(node.rule,self.tables)
+
+        # find tuples in each table that is closest to the average influence
+        f = lambda (idx, tables): map(lambda row: self.influence(row, idx), tables)
+        all_infs = map(f, enumerate(tables))
+        states = []
+
+        for idx, t, infs in zip(xrange(len(tables)), tables, all_infs):
+            if infs:
+                avg = np.mean(infs)
+                min_tup = min(t, key=lambda row: self.influence(row, idx))
+                state = self.err_funcs[idx].state((min_tup,))
+                states.append(state)
+            else:
+                states.append(None)
+
+        return states
+    
+    def skinny_penalty(self, rules):
+        for rule in rules:
+            edges = []
+            for c in rule.filter.conditions:
+                attr = self.merged_table.domain[c.position]
+                if attr.var_type == Orange.feature.Type.Discrete:
+                    continue
+                edges.append(c.max - c.min)
+            if len(edges) > 1:
+                volume = reduce(mul, edges)
+                mean_edge = sum(edges) / float(len(edges))
+                max_vol = mean_edge ** len(edges)
+                perc = (volume / max_vol) ** (1./len(edges))
+                if perc < 0.05:
+                    return True
+                return (1. - perc) * 1.5
+            return False
+
+        
         
     def grow(self, node, tables, samp_rates):
         rule = node.rule
@@ -220,6 +264,7 @@ class BDTTablesPartitioner(Basic):
         samples = [self.sample(*pair) for pair in zip(datas, samp_rates)]
         counts = map(len, datas)
         node.n = sum(counts)
+        node.cards = counts
 
         if node.n == 0:
             return node
@@ -228,11 +273,12 @@ class BDTTablesPartitioner(Basic):
 
         if self.should_stop(samples):
             node.set_score(self.estimate_inf(samples))
+            node.states = self.get_states(datas)
+            if not node.states:
+                pdb.set_trace()
+                self.get_states(data)
             return node
 
-        if self.in_box(node):
-            #pdb.set_trace()
-            pass
 
         attr_scores = []
         for attr, new_rules in self.child_rules(rule):
@@ -240,18 +286,26 @@ class BDTTablesPartitioner(Basic):
             if not scores:
                 continue
             score = self.merge_scores(scores)
+            # penalize excessive splitting along a single dimension if it is not helping
             if attr == node.prev_attr:
-                score = score + (0.1) * abs(score)
+                score = score + (0.05) * abs(score)
             if attr.var_type == Orange.feature.Type.Discrete:
                 score = score - (0.05) * abs(score)
+            if attr == node.prev_attr and self.skinny_penalty(new_rules):
+                score = score + (0.6) * abs(score)
+
             if score != -inf:
                 attr_scores.append((attr, new_rules, score, scores))
 
         if not attr_scores:
             node.set_score(self.estimate_inf(samples))
+            node.states = self.get_states(datas)
             return node
 
-        attr, new_rules, score, scores = min(attr_scores, key=lambda p: p[-1])
+        attr, new_rules, score, scores = min(attr_scores, key=lambda p: p[-2])
+        
+
+
         node.score = min(scores)
         minscore = self.get_score_for_samples(samples)
         minscore = minscore - abs(minscore) * self.min_improvement

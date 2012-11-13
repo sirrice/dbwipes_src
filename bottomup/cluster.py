@@ -25,10 +25,9 @@ class Cluster(object):
         @param cols the set of continuous columns
         """
         self.error = error
-        self.bbox = (tuple(bbox[0]), tuple(bbox[1]))
+        self.bbox = bbox and (tuple(bbox[0]), tuple(bbox[1])) or ((),())
         self.discretes = defaultdict(set)
         self.centroid = tuple([np.mean((p1, p2)) for p1, p2 in zip(*self.bbox)])
-        self.volume = volume(bbox)
         self.cols = cols
         self.parents = parents
         self.max_anc_error = self.max_ancestor_error()
@@ -42,6 +41,13 @@ class Cluster(object):
         self.mean_inf = None
         self.idxs = []
 
+        self.states = []
+        self.cards = []
+        self.bad_states = []
+        self.bad_cards = []
+        self.good_states = []
+        self.good_cards = []
+
         Cluster._id += 1
 
         for k,vs in discretes.iteritems():
@@ -49,6 +55,10 @@ class Cluster(object):
 
         self.hash = None
         self._bound_hash = None
+
+    def __volume__(self):
+        return volume(self.bbox)
+    volume = property(__volume__)
 
     def clone(self):
         return Cluster(self.bbox, self.error, self.cols,
@@ -185,6 +195,7 @@ class Cluster(object):
         if not d_intersects:
             return False
 
+
         d_same = self.discretes_same(o)
         intersection = intersection_box(self.bbox, o.bbox)
         make_diff = lambda bbox: map(lambda p:p[1]-p[0], zip(*bbox))
@@ -192,7 +203,13 @@ class Cluster(object):
         mydiffs = make_diff(self.bbox)
         odiffs = make_diff(o.bbox)
 
-        overlapping = [d for d, md, od in zip(diffs, mydiffs, odiffs) if d > 0 and d/md > thresh]
+        if len([d for d,md in zip(diffs, mydiffs) if d < -md*0.01]):
+            return False
+
+        if len(mydiffs) == 0:
+            return True
+
+        overlapping = [d for d, md, od in zip(diffs, mydiffs, odiffs) if d >= 0 and (md == 0 or d/md > thresh)]
         if len(overlapping) > 0:
             return True
         return False

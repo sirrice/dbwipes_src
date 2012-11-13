@@ -119,7 +119,7 @@ if __name__ == '__main__':
         
         errperc = 0.001
         np.seterr(all='raise')
-        topdown = MR(aggerr=obj.errors[0],
+        topdown = BDT(aggerr=obj.errors[0],
                           errperc=errperc,
                           epsilon=0.00051,
                           cols=cols,
@@ -132,13 +132,13 @@ if __name__ == '__main__':
                           granularity=10,
                           max_wait=5*60,#None,
                           naive=False,#True,
-                          c=.55)
+                          c=.00)
         clusters = topdown(full_table, bad_tables, good_tables)
         clusters = filter(lambda x:x, clusters)
 
         all_clusters = normalize_cluster_errors([c.clone() for c in topdown.all_clusters])
         clusters = normalize_cluster_errors([c.clone() for c in clusters])
-        best_clusters = sorted(clusters, key=lambda c: c.error, reverse=True)
+        best_clusters = sorted(clusters, key=lambda c: c.error, reverse=True)[:10]
 
         print "\n======Final Results====="
         print "Ideal: %d tuples" % len(get_ground_truth(full_table))
@@ -161,6 +161,21 @@ if __name__ == '__main__':
 
             
         pp.close()
+
+        cluster = None
+        while True:
+            print "set cluster to a value"
+            pdb.set_trace()
+            pp = PdfPages('figs/topdown_%s.pdf' % outname)
+            topdown.merger.adj_matrix.insert(cluster)
+            neighbors = topdown.merger.adj_matrix.neighbors(cluster)
+            for n in neighbors:
+                n.error = 0.5
+            cluster.error = 1
+            print_clusters(pp, list(neighbors) + [cluster], title='foo')
+
+            pp.close()
+
 
 
     nbadresults = 10

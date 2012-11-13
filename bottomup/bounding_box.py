@@ -35,5 +35,7 @@ def box_same(box1, box2, epsilon=0.):
 
 def volume(bbox):
     if not len(bbox[0]): return 0.
-    return reduce(mul, (maxv - minv for minv, maxv in zip(*bbox)))
+    diffs = [maxv - minv for minv, maxv in zip(*bbox)]
+    if min(diffs) < 0: return 0
+    return reduce(mul, diffs) 
 

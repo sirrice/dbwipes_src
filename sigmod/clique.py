@@ -147,7 +147,8 @@ class MR(Basic):
         params = dict(self.params)
         params.update({'cols' : self.cols,
                        'influence' : lambda cluster: self.influence(cluster),
-                       'is_mergable' : is_mergable})
+                       'is_mergable' : is_mergable,
+                       'learner' : self})
         self.merger = Merger(**params)
         self.final_clusters = self.merger(clusters)
         self.all_clusters = clusters

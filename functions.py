@@ -1,6 +1,7 @@
 import numpy as np
 import Orange
 from util import *
+from itertools import repeat
 
 _logger = get_logger()
 
@@ -8,6 +9,18 @@ NAN = float('NaN')
 
 class Func(object):
     def __init__(self, data=None):
+        pass
+
+    def state(self, data):
+        pass
+
+    def update(self, states, num=1):
+        pass
+
+    def remove(self, big_state, state, num=1):
+        pass
+
+    def recover(self, state):
         pass
 
     def __call__(self, data):
@@ -50,6 +63,36 @@ class StdFunc(Func):
         self.std = 0.
         if data is not None:
             self(data)
+
+    def state(self, data):
+        if len(data.shape) == 2:
+            data = data.reshape(data.shape[0])
+        x2 = np.dot(data, data)
+        n = len(data)
+        total = data.sum()
+
+        return (x2, total, n)
+
+
+    def update(self, states, num=1):
+        x2s, totals, counts = zip(*states)
+        x2 = sum(x2s)
+        count = sum(counts)
+        total = sum(totals)
+        return (x2*num, total*num, count*num)
+    
+    def remove(self, bstate, state, num=1):
+        x2, total, n = tuple(bstate)
+        x2p, tp, np = self.update((state,))
+        return (x2-(num*x2p), total-(num*tp), n-(num*np))
+   
+    def recover(self, state):
+        x,t,n = tuple(state)
+        top = (n*x - t**2)
+        bot = n*n
+        if top < -1e-9 or bot == 0:
+            return NAN
+        return math.sqrt(top/bot)
 
 
     def value(self):
@@ -104,6 +147,32 @@ class AvgFunc(Func):
 
     def value(self):
         return self.total / self.n
+
+    def state(self, data):
+        if len(data.shape) == 2:
+            data = data.reshape(data.shape[0])
+        return (np.mean(data), len(data))
+
+    def update(self, states, num=1):
+        totals, counts = zip(*states)
+        totaln = float(sum(counts))
+        newavg = sum([t * count / totaln for t,count in zip(totals, counts)])
+        return (newavg, num*totaln)
+
+    def remove(self, bstate, state, num=1.):
+        t, count = tuple(bstate)
+        rmt, rmcount = self.update((state,), num=num)
+        newcount = float(count - rmcount)
+        if newcount == 0:
+            return (0, 0)
+        newt = t*count / newcount - rmt*rmcount / newcount 
+        return (newt, newcount)
+
+    def recover(self, state):
+        t,n = tuple(state)
+        if not n:
+            return NAN
+        return t 
 
     def __call__(self, data):
         if len(data.shape) == 2:
@@ -194,6 +263,23 @@ class SumFunc(Func):
     def value(self):
         return self.total
 
+
+
+    def state(self, data):
+        if len(data.shape) == 2:
+            data = data.reshape(data.shape[0])
+        return (data.sum(), len(data))
+
+    def update(self, states, num=1):
+        sums, counts = zip(*states)
+        return (sum(sums) * num, sum(counts) * num)
+
+    def remove(self, bstate, state, num=1):
+        return (bstate[0] - num*state[0], bstate[1]-state[1])
+
+    def recover(self, state):
+        return state[0]
+
     def __call__(self, data):
         if len(data.shape) == 2:
             data = data.reshape(data.shape[0])
@@ -220,6 +306,21 @@ class CountFunc(Func):
 
     def value(self):
         return self.total
+
+    def state(self, data):
+        if len(data.shape) == 2:
+            data = data.reshape(data.shape[0])
+        return (len(data), )
+
+    def update(self, states, num=1.):
+        return (sum(s[0] for s in states) * num)
+
+    def remove(self, bstate, state, num=1):
+        return (bstate[0] - num*state[0],)
+
+    def recover(self, state):
+        return state[0]
+
 
     def __call__(self, data):
         if len(data.shape) == 2:

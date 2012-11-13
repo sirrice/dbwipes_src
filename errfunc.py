@@ -67,6 +67,18 @@ class BaseErrFunc(object):
         self.domain = table.domain
         self.data = table
 
+    def state(self, data):
+        raise RuntimeError("not implemented")
+
+    def update(self, states, num=1):
+        raise RuntimeError("not implemented")
+
+    def remove(self, big_state, state, n=1):
+        raise RuntimeError("not implemented")
+
+    def recover(self, state):
+        raise RuntimeError("not implemented")
+
     def __call__(self, data, opt):
         pass
 
@@ -115,6 +127,22 @@ class AggErrFunc(BaseErrFunc):
         self.f(*vals)
         self.value = self.f.value()
         return self.value
+
+    def state(self, data):
+        vals = map(lambda c: c(data, 'scratch'), self.children)
+        return self.f.state(*vals)
+
+    def update(self, states, num=1):
+        return self.f.update(states, num=num)
+
+    def remove(self, big_state, state, n=1):
+        return self.f.remove(big_state, state, n)
+
+    def recover(self, state):
+        "recompute the actual value, then compare it against the truth"
+        newval = self.f.recover(state)
+        return self.errtype(self.value, newval)
+
 
     def __call__(self, data, mode='rm'):
         self.ncalls += 1
@@ -302,4 +330,26 @@ class Var(BaseErrFunc):
             return data_array[:, self.idx]
         return np.array([float(row[self.idx].value) for row in data_array])
 
+class DummyVar(BaseErrFunc):
+    def __call__(self):
+        BaseErrFunc.__init__(self)
 
+    def clone(self):
+        return self
+
+    def setup(self, data):
+        return np.array(sum(data) )
+
+    def __call__(self, data_array, mode='rm'):
+        return np.array(data_array)
+
+
+
+if __name__ == '__main__':
+    ef = AvgErrFunc([DummyVar()])
+    s1 = ef.state(range(10))
+    s2 = ef.state(range(4))
+    print ef.recover(s1), np.mean(range(10))
+    print ef.recover(s2), np.mean(range(4))
+    print ef.recover(ef.update(s1, s2)), np.mean(range(10) + range(4))
+    print ef.recover(ef.remove(s1, s2)), np.mean(range(4,10))

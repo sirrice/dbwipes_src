@@ -55,32 +55,60 @@ class BDT(Basic):
         self.disc_dists = dict(zip(attrnames, Orange.statistics.distribution.Domain(self.full_table)))
 
 
+        self.bad_states = [ef.state(t) for ef, t in zip(self.bad_err_funcs, self.bad_tables)]
+        self.good_states = [ef.state(t) for ef, t in zip(self.good_err_funcs, self.good_tables)]
 
 
     def nodes_to_clusters(self, nodes, table):
-        rules = []
+        clusters = []
         for node in nodes:
-            rules.append(node.rule)
             node.rule.quality = node.influence
-        fill_in_rules(rules, table, cols=self.cols)
-        clusters = [Cluster.from_rule(rule, self.cols) for rule in rules]
-        return clusters 
+            fill_in_rules((node.rule,), table, cols=self.cols)
+            cluster = Cluster.from_rule(node.rule, self.cols)
+            cluster.states = node.states
+            cluster.cards = node.cards
+            clusters.append(cluster)
+        return clusters
 
+    def estimate_influence(self, cluster):
+        print 'dawg'
+        bad_infs, good_infs = [], []
+
+        for ef, big_state, state, n in zip(self.bad_states, cluster.bad_states, cluster.bad_cards):
+            if not state:
+                continue
+            inf = ef.recover(ef.remove(big_state, state, n))
+            bad_infs.append(inf)
+        if not bad_infs:
+            return -1e100000000
+        
+        if cluster.good_states:
+            for ef, big_state, state, n in zip(self.good_states, cluster.good_states, cluster.good_cards):
+                inf = ef.recover(ef.remove(big_state, state))
+                good_infs.append(inf)
+        
+
+        return self.l * np.mean(bad_infs) - (1. - self.l) * max(map(abs, good_infs))
+        
 
     def merge(self, clusters, thresh):
         start = time.time()
-        #thresh = thresh is None and compute_clusters_threshold(clusters) or thresh
         is_mergable = lambda c: c.error >= thresh
         params = dict(self.params)
         params.update({'cols' : self.cols,
                       'err_func' : self.err_func,
-                      'influence' : lambda cluster: self.influence_cluster(cluster),
-                      'is_mergable' : is_mergable})
+                      'influence' : lambda c: self.influence_cluster(c),
+                      'is_mergable' : is_mergable,
+                      'learner' : self})
         self.merger = Merger(**params)
         merged_clusters = self.merger(clusters)
         merged_clusters.sort(key=lambda c: c.error, reverse=True)
         self.merge_cost = time.time() - start
+        _logger.debug("----merge costs----")
         _logger.debug( "merge cost\t%d" , self.merge_cost)
+        stats = sorted(self.merger.stats.items(), key=lambda s: s[1], reverse=True)
+        strs = ['%s\t%.4f\t%d\t%.4f' % (k, v[0], v[1], v[1] and v[0]/v[1] or 0) for k,v in stats]
+        _logger.debug('\n%s', '\n'.join(strs))
         return merged_clusters
 
     def create_rtree(self, clusters):
@@ -106,11 +134,16 @@ class BDT(Basic):
         errors = [c.error for c in bclusters]
         u, std = np.mean(errors), np.std(errors)
         u = min(max(errors), u + std)
-        low_influence = [c for c in bclusters if c.error < u]
-        bqueue = deque([c for c in bclusters if c.error >= u])
+        bqueue = deque(bclusters)
+        low_influence = []
+#        low_influence = [c for c in bclusters if c.error < u]
+#        bqueue = deque([c for c in bclusters if c.error >= u])
 
         hclusters = [c for c in hclusters if c.error >= u]
         if not hclusters:
+            for c in bclusters:
+                c.bad_states = c.states
+                c.bad_cards = c.cards
             return bclusters
         hindex = self.create_rtree(hclusters)
         ret = []
@@ -126,6 +159,8 @@ class BDT(Basic):
             if not hcs:
                 c.bad_inf = c.error
                 c.good_inf = None
+                c.bad_states = c.states
+                c.bad_cards = c.cards
                 ret.append(c)
                 continue
 
@@ -147,18 +182,30 @@ class BDT(Basic):
                 if len(intersects) == 1 and not excludes:
                     c.good_inf = hc.error
                     c.bad_inf = c.error
+                    c.good_states = hc.states
+                    c.bad_states = c.states
+                    c.bad_cards = c.cards
+                    c.good_cards = [math.ceil(n * c.volume / hc.volume) for n in c.cards]
+                    if not c.good_cards:
+                        pdb.set_trace()
                     ret.append(c)
                     continue
                 else:
                     for cluster in chain(intersects, excludes):
                         cluster.good_inf, cluster.bad_inf, cluster.error = hc.error, c.error, c.error
+                        cluster.states = c.states
+                        new_vol = cluster.volume
+                        cluster.cards = [math.ceil(n * new_vol / c.volume) for n in c.cards]
+
                     bqueue.extendleft(intersects)
                     bqueue.extendleft(excludes)
                     break
 
             if not matched:
                 c.bad_inf = c.error
-                c.good_inf = -1e100000000
+                c.good_inf = -1e10000000
+                c.bad_states = c.states
+                c.bad_cards = c.cards
                 ret.append(c)
 
         _logger.info( "intersection %d untouched, %d split" , len(low_influence), len(ret))
@@ -178,11 +225,14 @@ class BDT(Basic):
 
         start = time.time()
         bpartitioner = BDTTablesPartitioner(**params)
-        #bnodes = list(bpartitioner(bad_tables, full_table))
-        bnodes = list(bpartitioner([full_table], full_table))
+        bnodes = list(bpartitioner(bad_tables, full_table))
+        #bnodes = list(bpartitioner([full_table], full_table))
         bnodes.sort(key=lambda n: n.influence, reverse=True)
         bclusters = self.nodes_to_clusters(bnodes, full_table)
         self.cost_partition_bad = time.time() - start
+
+        if len(bclusters[0].states) != len(self.bad_tables):
+            pdb.set_trace()
 
         _logger.debug('\npartitioning bad tables done\n')
 
@@ -192,10 +242,12 @@ class BDT(Basic):
         params['err_func'] = err_func
         hpartitioner = BDTTablesPartitioner(**params)
         hpartitioner.inf_bounds = bpartitioner.inf_bounds
-        hnodes = list(hpartitioner([good_tables[0]], full_table))
+        hnodes = list(hpartitioner(good_tables, full_table))
         hnodes.sort(key=lambda n: n.influence, reverse=True)
         hclusters = self.nodes_to_clusters(hnodes, full_table)
         self.cost_partition_good = time.time() - start
+
+
 
         _logger.debug( "==== Best Bad Clusters (%d total) ====" , len(bnodes))
         _logger.debug( '\n'.join(map(str, bnodes[:10])))
@@ -214,23 +266,25 @@ class BDT(Basic):
         _logger.debug("computing influences on %d", len(clusters))
         clusters = filter(lambda c: c.error != -1e10000000, clusters)
         clusters.sort(key=lambda c: c.error, reverse=True)
-        thresh = min(clusters, key=lambda c: c.error).error
-        _ = filter(lambda c: c.error >= thresh, clusters)
-        n = len(_)
-        _ = set(clusters[:n])
-        for c in clusters:
-            c.error = 0
-        thresh = None
-        for c in _:
-            c.error = self.influence_cluster(c)
-            if math.isnan(c.error) or math.isinf(c.error): 
-                continue
-            thresh = thresh is None and c.error or min(thresh, c.error)
-        for c in clusters:
-            if c not in _:
-               c.error = thresh - 10*thresh
-        clusters = filter(lambda c: not math.isinf(c.error), clusters)
+        thresh = compute_clusters_threshold(clusters, nstds=1.5)
         self.all_clusters = clusters
+        self.all_clusters = filter(lambda c: c.error >= thresh, clusters)
+#        thresh = min(clusters, key=lambda c: c.error).error
+#        _ = filter(lambda c: c.error >= thresh, clusters)
+#        n = len(_)
+#        _ = set(clusters[:n])
+#        for c in clusters:
+#            c.error = 0
+#        thresh = None
+#        for c in _:
+#            c.error = self.influence_cluster(c)
+#            if math.isnan(c.error) or math.isinf(c.error): 
+#                continue
+#            thresh = thresh is None and c.error or min(thresh, c.error)
+#        for c in clusters:
+#            if c not in _:
+#               c.error = thresh - 10*thresh
+#        clusters = filter(lambda c: not math.isinf(c.error), clusters)
         _logger.debug('computed influences  in %d', time.time()-start)
 
 

@@ -222,11 +222,11 @@ pp = PdfPages('figs/test.pdf')
 
 
 
-run(db, 0, pp, klasses=[Naive], c=[1.], max_wait=30*60, granularity=20, naive=True)
 
 if True:
+    pass
     # run and gather "ground truth" for everything
-#    run(db, 0, pp, klasses=[Naive], max_wait=10*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
+    run(db, 0, pp, klasses=[Naive], max_wait=10*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
 #    run(db, 11, pp, klasses=[Naive], max_wait=10*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
 #    run(db, 5, pp, klasses=[Naive], max_wait=10*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
 #    run(db, 15, pp, klasses=[Naive], max_wait=10*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
@@ -259,10 +259,10 @@ if True:
 #    run(db, 15, pp, klasses=[MR], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.], granularity=20)
 
 
-    run(db, 0, pp, klasses=[NaiveMR], max_wait=20*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
-    run(db, 11, pp, klasses=[NaiveMR], max_wait=20*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
-    run(db, 5, pp, klasses=[NaiveMR], max_wait=20*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
-    run(db, 15, pp, klasses=[NaiveMR], max_wait=20*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
+#    run(db, 0, pp, klasses=[NaiveMR], max_wait=20*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
+#    run(db, 11, pp, klasses=[NaiveMR], max_wait=20*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
+#    run(db, 5, pp, klasses=[NaiveMR], max_wait=20*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
+#    run(db, 15, pp, klasses=[NaiveMR], max_wait=20*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
 
 
 
