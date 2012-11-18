@@ -51,7 +51,7 @@ class Merger(object):
         self.learner = kwargs.get('learner', None)
 
         self.stats = {}
-        self.adj_matrix = None
+        self.adj_graph = None
         self.use_mtuples = kwargs.get('use_mtuples', True)
         
         self.set_params(**kwargs)
@@ -201,13 +201,13 @@ class Merger(object):
         return l * bad_inf - (1. - l) * good_inf
 
     @instrument
-    def merge(self, cluster, neighbor, clusters, rtree):
+    def merge(self, cluster, neighbor, clusters):
         newbbox = bounding_box(cluster.bbox, neighbor.bbox)
-        cidxs = self.get_intersection(rtree, newbbox)
+        cidxs = self.get_intersection(self.rtree, newbbox)
         intersecting_clusters = [clusters[cidx] for cidx in cidxs]
 
         merged = Cluster.merge(cluster, neighbor, intersecting_clusters, self.point_volume)
-        if not merged:
+        if not merged or not merged.volume:
             return None
         
         if self.use_mtuples:
@@ -225,54 +225,20 @@ class Merger(object):
         return ret
 
     @instrument
-    def expand(self, cluster, clusters, adj_graph, rtree):
+    def expand(self, cluster, clusters):
         rms = set()
         while True:
-            neighbors = adj_graph.neighbors(cluster)
+            neighbors = self.adj_graph.neighbors(cluster)
             
-            # figure out expansions in each dimension, and rm/tmerges sets
-            # dim1-lower, dim1-higher,...,dimk-lower, dimk-higher
-#            lowers = [[] for i in xrange(len(cluster.bbox[0]))]
-#            highers = [[] for i in xrange(len(cluster.bbox[0]))]
             rms, tomerges = set(), list()
             for n in neighbors:
                 if n in rms or cluster.contains(n) or cluster.same(n, epsilon=0.02):
                     rms.add(n)
                     continue
                 tomerges.append(n)
-                continue
-
-                mbox = bounding_box(n.bbox, cluster.bbox)
-                for dim, (cbound, mbound) in enumerate(zip(zip(*cluster.bbox), zip(*mbox))):
-                    lower = max(0, cbound[0] - mbound[0])
-                    higher = max(0, mbound[1] - cbound[1])
-                    lowers[dim].append(lower)
-                    highers[dim].append(lower)
 
             if not tomerges:
                 break
-
-#            lowers = [ (np.mean(vals), np.median(vals), max(vals)) for vals in lowers]
-#            highers = [ (np.mean(vals), np.median(vals), max(vals)) for vals in highers]
-#
-#            merges = []
-#            reasons = []
-#            newneighbor = cluster.clone()
-#            newneighbor.bbox = list(map(list, newneighbor.bbox))
-#            for dim, lowervals in enumerate(lowers):
-#                for lower in set(lowervals):
-#                    if lower:
-#                        newneighbor.bbox[0][dim] -= lower
-#                        merged = self.merge(cluster, newneighbor, clusters, rtree)
-#                        newneighbor.bbox[0][dim] = cluster.bbox[0][dim]
-#                        merges.append(merged)
-#            for dim, highervals in enumerate(highers):
-#                for higher in set(highervals):
-#                    if higher:
-#                        newneighbor.bbox[0][dim] += higher
-#                        merged = self.merge(cluster, newneighbor, clusters, rtree)
-#                        newneighbor.bbox[0][dim] = cluster.bbox[0][dim]
-#                        merges.append(merged)
 
             def filter_cluster(c):
                 if c is None:
@@ -294,11 +260,11 @@ class Merger(object):
                 return True
 
 
-            tomerges.sort(key=lambda n: (cluster.volume + n.volume) / volume(bounding_box(cluster.bbox, n.bbox)), reverse=True)
+            tomerges.sort(key=lambda n: volume(bounding_box(cluster.bbox, n.bbox)), reverse=True)
             reasons = []
             merges = []
             seen = []
-            f = lambda tomerge: self.merge(cluster, tomerge, clusters, rtree)
+            f = lambda tomerge: self.merge(cluster, tomerge, clusters)
             for n in tomerges:
                 bseen = False
                 for _ in seen:
@@ -325,12 +291,16 @@ class Merger(object):
 
             rms.update(merged.parents)
             cluster = merged
-            adj_graph.insert(merged)
+            self.adj_graph.insert(merged)
 
         _logger.debug('\n')
         return cluster, rms
 
 
+
+    @instrument
+    def make_adjacency(self, clusters):
+        return AdjacencyGraph(clusters)
 
         
     def __call__(self, clusters, **kwargs):
@@ -342,13 +312,11 @@ class Merger(object):
         self.set_params(**kwargs)
         self.setup_stats(clusters)
         clusters_set = set(clusters)
-        print "making adjacency graph"
-        self.adj_matrix = adj_matrix = AdjacencyGraph(clusters)
-        print "done"
+        self.adj_graph = self.make_adjacency(clusters)
+        self.rtree = self.construct_rtree(clusters)
         results = []
 
 
-        rtree = self.construct_rtree(clusters)
         mergable_clusters = filter(self.is_mergable, clusters)
         mergable_clusters.sort(key=lambda mc: mc.error, reverse=True)
  
@@ -384,7 +352,7 @@ class Merger(object):
                     _logger.debug("skipped\n\t%s\n\t%s", str(cluster), str(test))
                     continue
 
-                merged, rms = self.expand(cluster, clusters, adj_matrix, rtree) 
+                merged, rms = self.expand(cluster, clusters) 
                 if not merged or merged == cluster or len(filter(lambda c: c.contains(merged), cur_clusters)):
                     seen.add(cluster)
                     continue
@@ -410,17 +378,11 @@ class Merger(object):
 
             
             if not new_clusters:
-                print "\n".join(map(str, mergable_clusters))
-                cs = [c for c in cur_clusters if volume(intersection_box(c.bbox, [(40,40), (60,60)])) > 50]
-                mcs = mergable_clusters
-                #pdb.set_trace()
-                if len(mergable_clusters) > 1:
-                    self.merge(mergable_clusters[0], mergable_clusters[1], clusters, rtree)
                 break
 
 
-            map(adj_matrix.remove, merged_clusters)
-            map(adj_matrix.insert, new_clusters)
+            map(self.adj_graph.remove, merged_clusters)
+            map(self.adj_graph.insert, new_clusters)
             clusters_set.difference_update(merged_clusters)
             clusters_set.update(new_clusters)
             mergable_clusters = sorted(new_clusters, key=lambda c: c.error, reverse=True)

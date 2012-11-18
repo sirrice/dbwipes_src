@@ -185,8 +185,12 @@ class BDTTablesPartitioner(Basic):
         f = lambda row: self.influence(row, idx)
         try:
             infs = map(f, data)
+            if not(sum(infs)):
+                return len(infs), 0, 0, 0, 0
             return len(infs), wmean(infs, infs), np.std(infs), max(infs), min(infs)
         except:
+            import traceback
+            traceback.print_exc()
             pdb.set_trace()
 
 

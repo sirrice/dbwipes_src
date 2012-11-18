@@ -1,13 +1,15 @@
 import sys
 import pdb
+import random
 sys.path.extend(('.', '..'))
 
 
 from common import *
+from misc.gensinglecluster import gen_points
 from util import get_logger
 
 _logger = get_logger()
-
+random.seed(0)
 
 
     # configurations
@@ -77,7 +79,7 @@ def mkfmt(arr):
 
 def get_ground_truth(db, datasetidx, c):
     with db.begin() as conn:
-        q = """select ids from stats where klass = 'Naive' and dataset = %s and c = %s"""
+        q = """select ids from stats where klass = 'Naive' and dataset = %s and c = %s order by expid desc"""
         for row in conn.execute(q, datasetidx, c).fetchall():
             return map(int, map(float, row[0].split(',')))
         return None
@@ -98,7 +100,9 @@ def run(db, datasetidx, pp=None, **kwargs):
                 truth = all_ids[0]
             else:
                 truth = get_ground_truth(db, datasetidx, params['c'])
+
             if truth == None:
+                pdb.set_trace()
                 raise RuntimeError("Could not find ground truth for %d, %.4f" % (datasetidx, params['c']))
 
             all_stats = [compute_stats(ids, truth, table_size) for ids in all_ids]
@@ -107,7 +111,7 @@ def run(db, datasetidx, pp=None, **kwargs):
             for (acc, p, r, f1), rule, ids in zip(all_stats, rules, all_ids):
                 ids_str = ','.join(map(str, ids))
                 isbest = rule.isbest
-                vals = [expid, datasetidx]
+                vals = [expid, str(datasetidx), kwargs.get('notes', '')]
                 vals.extend([params.get(key, None) for key in pkeys])
                 vals.extend((total_cost, acc, p, r, f1, rule.quality, isbest, str(rule), ids_str))
                 row_id = save_result(db, vals, costs)
@@ -121,7 +125,7 @@ def run(db, datasetidx, pp=None, **kwargs):
                     chk_ids = get_row_ids(rule, learner.full_table)
                     acc, p, r, f1 = compute_stats(chk_ids, truth, table_size)
                     ids_str = ','.join(map(str, map(int, chk_ids)))
-                    vals = [expid, datasetidx]
+                    vals = [expid, datasetidx, kwargs.get('notes', '')]
                     vals.extend([params.get(key, None) for key in pkeys])
                     vals.extend((timein, acc, p, r, f1, rule.quality, False, str(rule), True, ids_str))
                     row_id = save_checkpoint(db, vals)
@@ -131,7 +135,8 @@ def run(db, datasetidx, pp=None, **kwargs):
 
 
             if pp:
-                print_stats(pp, all_stats, rules, ','.join(map(lambda p: '%s:%s'%tuple(p), params.items())))
+                pass
+                #print_stats(pp, all_stats, rules, ','.join(map(lambda p: '%s:%s'%tuple(p), params.items())))
         except Exception as e:
             import traceback
             traceback.print_exc()
@@ -145,19 +150,21 @@ def run(db, datasetidx, pp=None, **kwargs):
 
 def save_result(db, stat, costs):
     with db.begin() as conn:
-        q = """insert into stats(expid, dataset, klass, cols, epsilon, c,     
+        q = """insert into stats(expid, dataset, notes, klass, cols, epsilon, c,     
                                  lambda, cost, acc, prec, recall, f1, score, 
                                  isbest, rule, ids) values(%s) returning id""" % (','.join(['%s']*len(stat)))
         sid = conn.execute(q, *stat).fetchone()[0]
 
         q = """insert into costs(sid, name, cost) values(%s,%s,%s)"""
         for name, cost in costs.items():
+            if isinstance(cost, list):
+                cost = cost[0]
             conn.execute(q, sid, name, cost)
         return sid
 
 def save_checkpoint(db, stat):
     with db.begin() as conn:
-        q = """insert into stats(expid, dataset, klass, cols, epsilon, c,     
+        q = """insert into stats(expid, dataset, notes, klass, cols, epsilon, c,     
                                  lambda, cost, acc, prec, recall, f1, score, 
                                  isbest, rule, ischeckpoint, ids) values(%s) returning id""" % (','.join(['%s']*len(stat)))
         sid = conn.execute(q, *stat).fetchone()[0]
@@ -188,7 +195,7 @@ def init_db(db):
         expid int,
         id serial,
         tstamp timestamp default current_timestamp,
-        dataset int,
+        dataset text,
         klass varchar(128) null,
         cols text null,
         epsilon float null,
@@ -205,7 +212,8 @@ def init_db(db):
         checkpoint float null,
         completed bool,
         rule text null,
-        ids text null
+        ids text null,
+        notes text null
                 )""")
             conn.execute("""create table costs (
             id serial,
@@ -215,64 +223,101 @@ def init_db(db):
     except:
         pass
 
-from sqlalchemy import *
-db = create_engine('postgresql://localhost/dbwipes')
-init_db(db) 
-pp = PdfPages('figs/test.pdf')
+def load_data(tablename, schema, pts):
+    with file('/tmp/clusters.txt', 'w') as f:
+        print >>f, '\t'.join(schema)
+        for pt in pts:
+            print >>f, '\t'.join(['%.4f']*len(pt)) % tuple(pt)
+    os.system('importmydata.py %s sigmod /tmp/clusters.txt 2> /tmp/dbtruck.err > /tmp/dbtruck.log' % tablename)
+
+
+def run_sigmod(pp, ndim, volperc):
+    params = []
+    for kdim in xrange(1, ndim+1):
+        for uo in (30, 80):
+            tablename = 'data_%d_%d_1000_0d%d_%duo' % (ndim, kdim, int(100.*volperc), uo)
+            params.append((tablename, (2000, ndim, kdim, volperc, 10, 10, uo, 10)))
+
+    for tablename, args in params:
+
+        # generate the damn data
+        obox, sbox, schema, pts = gen_points(*args)
+        print obox
+        print sbox
+        print tablename
+        load_data(tablename, schema, pts)
+        if ndim == 2 and kdim == 1:
+            continue
+
+        cs = [0., .25, .5, .75, 1.]
+        run(db, tablename, pp, klasses=[Naive], max_wait=2*60, c=cs, granularity=20, naive=True, notes=tablename)
+        run(db, tablename, pp, klasses=[NDT],  c=cs, granularity=20, naive=True, notes=tablename)
+        run(db, tablename, pp, klasses= [BDT], l=[0.5], c=cs, epsilon=[0.0001, 0.001], tau=[0.1, 0.55], p=0.7, notes=tablename)
+        run(db, tablename, pp, klasses= [BDT], l=[0.5], c=[1.], epsilon=[0.01, 0.1], tau=[0.1, 0.55], p=0.7, notes=tablename)
+        run(db, tablename, pp, klasses=[MR], l=[.5], c=cs, granularity=20, notes=tablename)
+
+if __name__ == '__main__':
+    from sqlalchemy import *
+    db = create_engine('postgresql://localhost/dbwipes')
+    init_db(db) 
+    pp = PdfPages('figs/test.pdf')
+
+
+    run_sigmod(pp, 2, 0.5)
+    run_sigmod(pp, 3, 0.5)
+    run_sigmod(pp, 4, 0.5)
+
+
+    if True:
+        pass
+        # run and gather "ground truth" for everything
+    #    run(db, 0, pp, klasses=[Naive], max_wait=10*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
+    #    run(db, 11, pp, klasses=[Naive], max_wait=10*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
+    #    run(db, 5, pp, klasses=[Naive], max_wait=10*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
+    #    run(db, 15, pp, klasses=[Naive], max_wait=5*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
+
+
+        # run all others on intel_noon
+    #    run(db, 0, pp, klasses=[NDT], c=[0., 0.25, 0.5, 0.75, 1.])
+    #    run(db, 0, pp, klasses= [BDT], l=[0.5], c=[0., 0.25, 0.5, 0.75, 1.], epsilon=[0.0001, 0.001], tau=[0.1, 0.45])
+    #    run(db, 0, pp, klasses= [BDT], l=[0.5], c=[1.], epsilon=[0.01, 0.1], tau=[0.1, 0.45])
+    #    run(db, 0, pp, klasses=[MR], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.], granularity=20)
+
+        # run obama
+    #    run(db, 11, pp, klasses=[NDT], c=[0., 0.25, 0.5, 0.75, 1.])
+    #    run(db, 11, pp, klasses=[BDT], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.], epsilon=[0.0001, 0.001], tau=[0.1, 0.45])
+    #    run(db, 11, pp, klasses=[BDT], l=[.5], c=[1.], epsilon=[0.01, 0.1], tau=[0.1, 0.45])
+    #    run(db, 11, pp, klasses=[MR], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.], granularity=20)
+
+        # run harddata 1
+    #    run(db, 5, pp, klasses=[NDT], c=[0., 0.25, 0.5, 0.75, 1.])
+    #    run(db, 5, pp, klasses=[BDT], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.], epsilon=[0.0001, 0.001], tau=[0.1, 0.5])
+    #    run(db, 5, pp, klasses=[BDT], l=[.5], c=[1.], epsilon=[0.01, 0.1])
+    #    run(db, 5, pp, klasses=[MR], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.], granularity=10)
+    #    run(db, 5, pp, klasses=[MR], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.], granularity=20)
+
+        # run harddata 15  -- high dim
+    #    run(db, 15, pp, klasses=[NDT], c=[0., 0.25, 0.5, 0.75, 1.])
+    #    run(db, 15, pp, klasses=[BDT], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.], epsilon=[0.0001, 0.001])
+    #    run(db, 15, pp, klasses=[BDT], l=[.5], c=[1.], epsilon=[0.0001, 0.001, 0.01, 0.1])
+    #    run(db, 15, pp, klasses=[MR], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.], granularity=10)
+    #    run(db, 15, pp, klasses=[MR], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.], granularity=20)
+
+
+    #    run(db, 0, pp, klasses=[NaiveMR], max_wait=20*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
+    #    run(db, 11, pp, klasses=[NaiveMR], max_wait=20*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
+    #    run(db, 5, pp, klasses=[NaiveMR], max_wait=20*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
+    #    run(db, 15, pp, klasses=[NaiveMR], max_wait=20*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
 
 
 
-
-if True:
-    pass
-    # run and gather "ground truth" for everything
-    run(db, 0, pp, klasses=[Naive], max_wait=10*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
-#    run(db, 11, pp, klasses=[Naive], max_wait=10*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
-#    run(db, 5, pp, klasses=[Naive], max_wait=10*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
-#    run(db, 15, pp, klasses=[Naive], max_wait=10*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
-
-
-    # run all others on intel_noon
-#    run(db, 0, pp, klasses=[NDT], c=[0., 0.25, 0.5, 0.75, 1.])
-#    run(db, 0, pp, klasses= [BDT], l=[0.5], c=[0., 0.25, 0.5, 0.75, 1.], epsilon=[0.0001, 0.001], tau=[0.1, 0.45])
-#    run(db, 0, pp, klasses= [BDT], l=[0.5], c=[1.], epsilon=[0.01, 0.1], tau=[0.1, 0.45])
-#    run(db, 0, pp, klasses=[MR], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.], granularity=20)
-
-    # run obama
-#    run(db, 11, pp, klasses=[NDT], c=[0., 0.25, 0.5, 0.75, 1.])
-#    run(db, 11, pp, klasses=[BDT], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.], epsilon=[0.0001, 0.001], tau=[0.1, 0.45])
-#    run(db, 11, pp, klasses=[BDT], l=[.5], c=[1.], epsilon=[0.01, 0.1], tau=[0.1, 0.45])
-#    run(db, 11, pp, klasses=[MR], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.], granularity=20)
-
-    # run harddata 1
-#    run(db, 5, pp, klasses=[NDT], c=[0., 0.25, 0.5, 0.75, 1.])
-#    run(db, 5, pp, klasses=[BDT], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.], epsilon=[0.0001, 0.001], tau=[0.1, 0.5])
-#    run(db, 5, pp, klasses=[BDT], l=[.5], c=[1.], epsilon=[0.01, 0.1])
-#    run(db, 5, pp, klasses=[MR], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.], granularity=10)
-#    run(db, 5, pp, klasses=[MR], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.], granularity=20)
-
-    # run harddata 15  -- high dim
-#    run(db, 15, pp, klasses=[NDT], c=[0., 0.25, 0.5, 0.75, 1.])
-#    run(db, 15, pp, klasses=[BDT], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.], epsilon=[0.0001, 0.001])
-#    run(db, 15, pp, klasses=[BDT], l=[.5], c=[1.], epsilon=[0.0001, 0.001, 0.01, 0.1])
-#    run(db, 15, pp, klasses=[MR], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.], granularity=10)
-#    run(db, 15, pp, klasses=[MR], l=[.5], c=[0., 0.25, 0.5, 0.75, 1.], granularity=20)
+        # run naive on intel_noon and increase the available columns
+        # will take forever...
+    #    run(db, 0, pp, klasses=[Naive], max_wait=30*60, cols=['voltage'], granularity=20, naive=True)
+    #    run(db, 0, pp, klasses=[Naive], max_wait=30*60, cols=['voltage', 'humidity'], granularity=20, naive=True)
+    #    run(db, 0, pp, klasses=[Naive], max_wait=30*60, cols=['voltage', 'humidity', 'light'], granularity=20, naive=True)
+    #    run(db, 0, pp, klasses=[Naive], max_wait=30*60, cols=['moteid'], granularity=20, naive=True)
+    #    run(db, 0, pp, klasses=[Naive], max_wait=30*60, granularity=20, naive=True)
 
 
-#    run(db, 0, pp, klasses=[NaiveMR], max_wait=20*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
-#    run(db, 11, pp, klasses=[NaiveMR], max_wait=20*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
-#    run(db, 5, pp, klasses=[NaiveMR], max_wait=20*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
-#    run(db, 15, pp, klasses=[NaiveMR], max_wait=20*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
-
-
-
-    # run naive on intel_noon and increase the available columns
-    # will take forever...
-#    run(db, 0, pp, klasses=[Naive], max_wait=30*60, cols=['voltage'], granularity=20, naive=True)
-#    run(db, 0, pp, klasses=[Naive], max_wait=30*60, cols=['voltage', 'humidity'], granularity=20, naive=True)
-#    run(db, 0, pp, klasses=[Naive], max_wait=30*60, cols=['voltage', 'humidity', 'light'], granularity=20, naive=True)
-#    run(db, 0, pp, klasses=[Naive], max_wait=30*60, cols=['moteid'], granularity=20, naive=True)
-#    run(db, 0, pp, klasses=[Naive], max_wait=30*60, granularity=20, naive=True)
-
-
-pp.close()
+    pp.close()

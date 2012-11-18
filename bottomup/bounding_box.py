@@ -28,6 +28,17 @@ def box_contained(box, bound, epsilon=0.):
     return (reduce(and_, (min1 >= min2 for min1, min2 in zip(box[0], bound[0]))) and
             reduce(and_, (max1 <= max2 for max1, max2 in zip(box[1], bound[1]))) )
 
+def box_completely_contained(box, bound, epsilon=0.):
+    if not len(zip(*box)) or not len(zip(*bound)):
+        return False
+    for inner, outer in zip(zip(*box), zip(*bound)):
+        if inner[0] <= outer[0] or inner[1] >= outer[1]:
+            return False
+        if (outer[1]-outer[0]) - (inner[1]-inner[0]) <= epsilon:
+            return False
+    return True
+
+
 def box_same(box1, box2, epsilon=0.):
     ivol = volume(intersection_box(box1, box2))
     f = lambda box: ivol >= (1. - epsilon) * volume(box)

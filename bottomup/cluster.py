@@ -220,12 +220,9 @@ class Cluster(object):
         return volume(intersection) >= 0.7 * min(self.volume, o.volume)
 
     def contains(self, o, epsilon=0.):
-        for key in o.discretes.keys():
-            if key in self.discretes:
-                diff = set(o.discretes[key]).difference(self.discretes[key])
-                if len(diff):
-                    return False
-        return box_contained(o.bbox, self.bbox, epsilon=epsilon)
+        if not box_contained(o.bbox, self.bbox, epsilon=epsilon):
+            return False
+        return self.discretes_contains(o)
 
     def same(self, o, epsilon=0.):
         for key in o.discretes.keys():
@@ -237,6 +234,13 @@ class Cluster(object):
         return box_same(o.bbox, self.bbox, epsilon=epsilon)
 
 
+    def discretes_contains(self, o):
+        for key in o.discretes.keys():
+            if key in self.discretes:
+                diff = set(o.discretes[key]).difference(self.discretes[key])
+                if len(diff):
+                    return False
+        return True
 
     def discretes_same(self, o):
         mykeys = set(self.discretes.keys())
@@ -351,6 +355,8 @@ class Cluster(object):
 
 
 def compute_clusters_threshold(clusters, nstds=1.):
+    if not clusters:
+        return 0.
     errors = [c.error for c in clusters]
     npts = [c.npts for c in clusters]
     #npts = [1] * len(clusters)

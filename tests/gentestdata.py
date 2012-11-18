@@ -5,8 +5,9 @@ from arch import *
 from aggerror import ErrTypes
 
 
-
-datasetnames = ['intel_noon',
+class DatasetNames(object):
+    def __init__(self):
+         self.datasetnames = ['intel_noon',
                 'intel_corr',
                 'intel_mote18',
                 'intel_first_spike',
@@ -21,14 +22,30 @@ datasetnames = ['intel_noon',
                 'intel_foo',
                 'fec12_donation',
                 'fec12_donation2',
-                'harddata4_sum']                
+                'harddata4_sum',
+                'data_2_2_1000_0d25',
+                'data_2_2_1000_0d1']
+
+    def __getitem__(self, key):
+        try:
+            self.datasetnames[int(key)]
+        except:
+            return key
+datasetnames = DatasetNames()
+
+# sigmod_<ndim>_<kdim>_<npts/group>_<volume>[_uh_sh_uo_so]
 
 
 
 
 def get_test_data(name, **kwargs):
-    cmd = 'testdata = get_%s()' % name
-    exec(cmd)
+
+    if name.startswith('data_'):
+        testdata = get_sigmod_data(name)
+    else:
+        cmd = 'testdata = get_%s()' % name
+        exec(cmd)
+
     sql, badresults, goodresults, get_ground_truth = tuple(testdata[:4])
     if len(testdata) > 4:
         errtype = testdata[-1]
@@ -43,6 +60,8 @@ def get_test_data(name, **kwargs):
         dbname = 'fec12'
     elif 'fec' in name:
         dbname = 'fec'
+    elif name.startswith('data_'):
+        dbname = 'sigmod'
     else:
         raise RuntimeException("i don't understand this test data: %s", name)
 
@@ -267,7 +286,20 @@ def get_fec12_donation2():
     def get_ground_truth(table):
         return [row['id'].value for row in table if row['contb_receipt_amt'].value > 1500]
     return sql, badresults[:2], goodresults[:2], get_ground_truth
-    
+
+
+def get_sigmod_data(fname):
+    """
+    fname: data_<ndim>_<kdim>_<npts/group>_<volume>[_uh_sh_uo_so]
+    """
+    sql = """SELECT sum(v), g FROM %s GROUP BY g""" % fname
+    badresults = range(5,10)
+    goodresults = range(5)
+
+    def get_ground_truth(table):
+        return [row['id'].value for row in table if row['v'].value > 20]
+    return sql, badresults, goodresults, get_ground_truth
+
 
 if __name__ == '__main__':
     print '\n'.join(map(str,enumerate(datasetnames)))

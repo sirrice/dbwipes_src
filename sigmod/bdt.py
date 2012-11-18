@@ -109,6 +109,9 @@ class BDT(Basic):
         stats = sorted(self.merger.stats.items(), key=lambda s: s[1], reverse=True)
         strs = ['%s\t%.4f\t%d\t%.4f' % (k, v[0], v[1], v[1] and v[0]/v[1] or 0) for k,v in stats]
         _logger.debug('\n%s', '\n'.join(strs))
+
+        for func, cost in self.merger.stats.items():
+            self.costs['merge_%s'%func] = cost
         return merged_clusters
 
     def create_rtree(self, clusters):
@@ -230,9 +233,7 @@ class BDT(Basic):
         bnodes.sort(key=lambda n: n.influence, reverse=True)
         bclusters = self.nodes_to_clusters(bnodes, full_table)
         self.cost_partition_bad = time.time() - start
-
-        if len(bclusters[0].states) != len(self.bad_tables):
-            pdb.set_trace()
+        
 
         _logger.debug('\npartitioning bad tables done\n')
 
@@ -258,6 +259,7 @@ class BDT(Basic):
         start = time.time()
         _logger.debug('intersecting')
         clusters = self.intersect(bclusters, hclusters)
+        self.all_clusters = clusters
         _logger.debug('done in %d', time.time()-start)
         self.cost_split = time.time() - start
 
@@ -267,24 +269,6 @@ class BDT(Basic):
         clusters = filter(lambda c: c.error != -1e10000000, clusters)
         clusters.sort(key=lambda c: c.error, reverse=True)
         thresh = compute_clusters_threshold(clusters, nstds=1.5)
-        self.all_clusters = clusters
-        self.all_clusters = filter(lambda c: c.error >= thresh, clusters)
-#        thresh = min(clusters, key=lambda c: c.error).error
-#        _ = filter(lambda c: c.error >= thresh, clusters)
-#        n = len(_)
-#        _ = set(clusters[:n])
-#        for c in clusters:
-#            c.error = 0
-#        thresh = None
-#        for c in _:
-#            c.error = self.influence_cluster(c)
-#            if math.isnan(c.error) or math.isinf(c.error): 
-#                continue
-#            thresh = thresh is None and c.error or min(thresh, c.error)
-#        for c in clusters:
-#            if c not in _:
-#               c.error = thresh - 10*thresh
-#        clusters = filter(lambda c: not math.isinf(c.error), clusters)
         _logger.debug('computed influences  in %d', time.time()-start)
 
 
@@ -294,10 +278,10 @@ class BDT(Basic):
         self.cost_merge = time.time() - start
 
 
-        self.costs = {'cost_partition_bad' : self.cost_partition_bad,
+        self.costs.update( {'cost_partition_bad' : self.cost_partition_bad,
                 'cost_partition_good' : self.cost_partition_good,
                 'cost_split' : self.cost_split,
-                'cost_merge' : self.cost_merge}
+                'cost_merge' : self.cost_merge})
         
         return self.final_clusters
 

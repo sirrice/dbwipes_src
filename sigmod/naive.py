@@ -64,7 +64,6 @@ class Naive(Basic):
         self.cost = time.time() - start
 
 
-
         # given a rule = c1,..,cn
         # options for each clause c_i
         # 1) extend c_i to the left, to the right
@@ -105,7 +104,7 @@ class Naive(Basic):
                     diff = time.time() - self.start
                     if not self.checkpoints or diff - self.checkpoints[-1][0] > 10:
                         if self.bests:
-                            best_rule = max(self.bests, key=lambda r: r.quality)
+                            best_rule = max(self.bests, key=lambda r: r.quality).clone()
                             self.checkpoints.append((diff, best_rule))
                     self.stop = diff > self.max_wait
                     self.n_rules_checked = 100

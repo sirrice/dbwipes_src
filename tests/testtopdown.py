@@ -27,6 +27,7 @@ matplotlib.use("Agg")
 def print_clusters(pp, clusters, title=''):
     fig = plt.figure(figsize=(15, 15))
     sub = fig.add_subplot(111)
+    clusters.sort(key=lambda c: c.error)
 
     for cluster in clusters:
         x, y = tuple(map(list, zip(*cluster.bbox)))
@@ -35,7 +36,7 @@ def print_clusters(pp, clusters, title=''):
         y[0] = max(0, y[0])
         y[1] = min(100, y[1])
         c = cm.jet(cluster.error)
-        r = Rect((x[0], y[0]), x[1]-x[0], y[1]-y[0], alpha=0.45, fc=c, fill=True, lw=1)
+        r = Rect((x[0], y[0]), x[1]-x[0], y[1]-y[0], alpha=max(0.1,cluster.error), ec=c, fill=False, lw=1.5)
         sub.add_patch(r)
 
     sub.set_ylim(-5, 105)
@@ -121,24 +122,25 @@ if __name__ == '__main__':
         np.seterr(all='raise')
         topdown = BDT(aggerr=obj.errors[0],
                           errperc=errperc,
-                          epsilon=0.00051,
+                          epsilon=0.0001,
                           cols=cols,
                           msethreshold=.25,
-                          tau=[0.1, 0.55],
-                          p = 0.6,
-                          l=0.5,
+                          tau=[0.1, 0.75],
+                          p = 0.8,
+                          l=.5,
                           min_pts = 3,
                           min_improvement=.01,
                           granularity=10,
-                          max_wait=5*60,#None,
+                          max_wait=60,#None,
                           naive=False,#True,
-                          c=.00)
+                          c=.30)
         clusters = topdown(full_table, bad_tables, good_tables)
         clusters = filter(lambda x:x, clusters)
 
         all_clusters = normalize_cluster_errors([c.clone() for c in topdown.all_clusters])
         clusters = normalize_cluster_errors([c.clone() for c in clusters])
         best_clusters = sorted(clusters, key=lambda c: c.error, reverse=True)[:10]
+        print "\n".join(map(str, topdown.costs.items()))
 
         print "\n======Final Results====="
         print "Ideal: %d tuples" % len(get_ground_truth(full_table))
@@ -153,7 +155,7 @@ if __name__ == '__main__':
         try:
             print_clusters(pp, all_clusters, title="all clusters")
             print_clusters(pp, clusters, title="merged clusters")
-            print_clusters(pp, best_clusters, title="best clusters")
+            print_clusters(pp, best_clusters[:10], title="best clusters")
         except:
             pass
 
@@ -161,11 +163,14 @@ if __name__ == '__main__':
 
             
         pp.close()
+        return
 
         cluster = None
         while True:
             print "set cluster to a value"
             pdb.set_trace()
+            if not cluster:
+                break
             pp = PdfPages('figs/topdown_%s.pdf' % outname)
             topdown.merger.adj_matrix.insert(cluster)
             neighbors = topdown.merger.adj_matrix.neighbors(cluster)
@@ -179,6 +184,6 @@ if __name__ == '__main__':
 
 
     nbadresults = 10
-    idxs = map(int, sys.argv[1:]) or [0,1]
+    idxs = sys.argv[1:] or [0,1]
     for idx in idxs:
         run_experiment(idx, nbadresults=nbadresults)
