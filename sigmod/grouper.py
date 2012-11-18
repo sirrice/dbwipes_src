@@ -34,7 +34,7 @@ class Blah(object):
         l = mr.l
 
         self.bad_infs = [bd / (bc**c) for bd,bc in zip(self.bad_deltas, self.bad_counts) if bc]
-        self.good_infs = [gd for gd,gc in zip(self.good_deltas, self.good_counts) if gc]
+        self.good_infs = [abs(gd) for gd,gc in zip(self.good_deltas, self.good_counts) if gc]
         self.bad_inf = l * (self.bad_infs and np.mean(self.bad_infs) or 0)
         self.good_inf = (1. - l) * (self.good_infs and max(self.good_infs) or 0)
         self.inf = self.bad_inf - self.good_inf
@@ -45,6 +45,7 @@ class Blah(object):
         self.good_npts = sum(self.good_counts)
         self.bad_npts = sum(self.bad_counts)
         self.mean_pts = np.mean(self.bad_counts + self.good_counts)
+
 
         self._rule = None
 
@@ -75,6 +76,7 @@ class Blah(object):
                         )
         self._rule = SDRule(self.grouper.data, None, conds, None)
         self._rule.quality = self.inf
+
         return self._rule
     rule = property(__rule__)
 

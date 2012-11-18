@@ -33,6 +33,28 @@ class AdjacencyGraph(object):
 
         self.bulk_init(clusters)
 
+    def to_json(self):
+        data = {
+                'clusters' : [c and c.__dict__ or None for c in self.clusters],
+                'id2c' : [(key, c.__dict__) for key, c in self.id2c.items()],
+                'c2id' : [(c.__dict__, val) for c, val in self.c2id.items()],
+                'graph' : [(key.__dict__, [val.__dict__ for val in vals]) for key, vals in self.graph.itemsiter()],
+                'cid' : self.cid,
+                '_ndim' : self._ndim,
+                '_rtreename' : 'BLAH'
+                }
+        return json.dumps(data)
+
+    def from_json(self, encoded):
+        data = json.loads(encoded)
+        self.clusters = [c and Cluster.from_dict(c) or None for c in data['clusters']]
+        self.id2c = dict([(key, Cluster.from_dict(val)) for key, val in data['id2c']])
+        self.c2id = dict([(Cluster.from_dict(key), val) for key, val in data['c2id']])
+        self.graph = dict([(Cluster.from_dict(key), map(Cluster.from_dict, vals)) for key, vals in data['graph']])
+        self.cid = data['cid']
+        self._ndim = data['_ndim']
+        self._rtree = None
+
     def setup_rtree(self, ndim, clusters=None):
         if self._rtree:
             return self._rtree

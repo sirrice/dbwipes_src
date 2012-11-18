@@ -30,6 +30,7 @@ class Naive(Basic):
         self.max_wait = kwargs.get('max_wait', 60*60*2) # 2 hours default
         self.n_rules_checked = 0
         self.stop = False
+        self.cs = kwargs.get('cs', None)
 
         self.checkpoints = []
 
@@ -39,7 +40,10 @@ class Naive(Basic):
         table has been trimmed of extraneous columns.
         """
         self.setup_tables(full_table, bad_tables, good_tables, **kwargs)
+        if not self.cs:
+            self.cs = [self.c]
         
+        self.bests_per_c = defaultdict(list)
         self.bests = []
         self.max_complexity = kwargs.get('max_complexity', self.max_complexity)
         self.granularity = kwargs.get('granularity', self.granularity)

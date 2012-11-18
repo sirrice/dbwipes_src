@@ -1,3 +1,4 @@
+import bsddb3
 import time
 import pdb
 import sys
@@ -41,6 +42,12 @@ class Basic(object):
         self.l = kwargs.get('l', 0.5)
         self.c = kwargs.get('c', 1.)
         self.bincremental = kwargs.get('bincremental', True)
+        self.use_cache = kwargs.get('use_cache', False)
+
+        self.tablename = kwargs.get('tablename', None)
+
+
+        self.cache = bsddb3.hashopen('./dbwipes.cache')
         
 
         self.scorer_cost = 0.
@@ -48,8 +55,23 @@ class Basic(object):
 
         self.set_params(**kwargs)
 
+    def __hash__(self):
+        components = [
+                self.__class__.__name__,
+                str(self.aggerr.__class__.__name__),
+                str(set(self.cols)),
+                self.err_func.__class__.__name__,
+                self.tablename,
+                self.l,
+                self.c
+                ]
+        components = map(str, components)
+        return hash('\n'.join(components))
+                
+
     def set_params(self, **kwargs):
         self.cols = kwargs.get('cols', self.cols)
+        self.use_cache = kwargs.get('use_cache', self.use_cache)
         self.params.update(kwargs)
 
     def setup_tables(self, full_table, bad_tables, good_tables, **kwargs):
@@ -94,12 +116,14 @@ class Basic(object):
 
 
 
-    def influence(self, rule):
+    def influence(self, rule, c=None):
         bdeltas, bcounts = self.bad_influences(rule)
         gdeltas, gcounts = self.good_influences(rule)
         gdeltas = map(abs, gdeltas)
         
-        binfs = [bdelta/(bcount**self.c) for bdelta,bcount in zip(bdeltas, bcounts) if bcount]
+        if c is None:
+            c = self.c
+        binfs = [bdelta/(bcount**c) for bdelta,bcount in zip(bdeltas, bcounts) if bcount]
         ginfs = [gdelta for gdelta,gcount in zip(gdeltas, gcounts) if gcount]
 
         

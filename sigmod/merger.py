@@ -304,6 +304,11 @@ class Merger(object):
 
         
     def __call__(self, clusters, **kwargs):
+        """
+        if there is cached info, load it and use the loaded data to
+        1) replace structures like adj_graph and rtree
+        2) initialize mergeable clusters, etc
+        """
         if not clusters:
             return list(clusters)
 

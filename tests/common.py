@@ -130,7 +130,9 @@ def run_experiment(datasetidx, **kwargs):
     params.update(kwargs)
     params.update({
         'aggerr' : aggerr,
-        'cols' : cols
+        'cols' : cols,
+        'tablename' : datasetidx,
+        'dataset' : datasetidx
         })
 
     costs, rules, learner = get_rules(ft, bts, gts, **params)

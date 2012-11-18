@@ -15,6 +15,8 @@ class ErrTypes(object):
         #if self.errtype == ErrTypes.EQUALTO and erreq is None:
         #    raise "Error Type EQUALTO needs a value"
 
+    def __str__(self):
+        return '%d\t%s' % (self.errtype, self.erreq)
 
     @staticmethod
     def valid(err):

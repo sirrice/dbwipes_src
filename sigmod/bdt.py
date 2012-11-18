@@ -1,3 +1,4 @@
+import json
 import time
 import pdb
 import sys
@@ -39,6 +40,11 @@ class BDT(Basic):
 
     def __init__(self, **kwargs):
         Basic.__init__(self, **kwargs)
+        self.all_clusters = []
+        self.cost_split = 0.
+        self.cost_partition_bad = 0.
+        self.cost_partition_good = 0.
+
 
     def setup_tables(self, full_table, bad_tables, good_tables, **kwargs):
         Basic.setup_tables(self, full_table, bad_tables, good_tables, **kwargs)
@@ -71,7 +77,6 @@ class BDT(Basic):
         return clusters
 
     def estimate_influence(self, cluster):
-        print 'dawg'
         bad_infs, good_infs = [], []
 
         for ef, big_state, state, n in zip(self.bad_states, cluster.bad_states, cluster.bad_cards):
@@ -91,8 +96,12 @@ class BDT(Basic):
         return self.l * np.mean(bad_infs) - (1. - self.l) * max(map(abs, good_infs))
         
 
-    def merge(self, clusters, thresh):
+    def merge(self, clusters):
+        if len(clusters) <= 1:
+            return clusters
         start = time.time()
+        clusters.sort(key=lambda c: c.error, reverse=True)
+        thresh = compute_clusters_threshold(clusters, nstds=1.5)
         is_mergable = lambda c: c.error >= thresh
         params = dict(self.params)
         params.update({'cols' : self.cols,
@@ -189,8 +198,6 @@ class BDT(Basic):
                     c.bad_states = c.states
                     c.bad_cards = c.cards
                     c.good_cards = [math.ceil(n * c.volume / hc.volume) for n in c.cards]
-                    if not c.good_cards:
-                        pdb.set_trace()
                     ret.append(c)
                     continue
                 else:
@@ -215,12 +222,13 @@ class BDT(Basic):
         ret.extend(low_influence)
         return ret
 
+    def get_partitions(self, full_table, bad_tables, good_tables, **kwargs):
+        myhash = str(hash(self))
+        if myhash in self.cache and self.use_cache:
+            dicts = json.loads(self.cache[myhash])
+            clusters = map(Cluster.from_dict, dicts)
+            return clusters
 
-    def __call__(self, full_table, bad_tables, good_tables, **kwargs):
-        """
-        table has been trimmed of extraneous columns.
-        """
-        self.setup_tables(full_table, bad_tables, good_tables, **kwargs)
 
         params = dict(self.params)
         params.update(kwargs)
@@ -248,8 +256,6 @@ class BDT(Basic):
         hclusters = self.nodes_to_clusters(hnodes, full_table)
         self.cost_partition_good = time.time() - start
 
-
-
         _logger.debug( "==== Best Bad Clusters (%d total) ====" , len(bnodes))
         _logger.debug( '\n'.join(map(str, bnodes[:10])))
         _logger.debug( "==== Best Good Clusters (%d total) ====" , len(hnodes))
@@ -259,22 +265,35 @@ class BDT(Basic):
         start = time.time()
         _logger.debug('intersecting')
         clusters = self.intersect(bclusters, hclusters)
-        self.all_clusters = clusters
+        clusters = filter(lambda c: c.error != -1e10000000, clusters)
         _logger.debug('done in %d', time.time()-start)
         self.cost_split = time.time() - start
 
+        # save the clusters in a dictionary
+        if self.use_cache:
+            dicts = [dict(c.__dict__) for c in clusters]
+            self.cache[myhash] = json.dumps(dicts)
+
+
+        return clusters
+
+
+
+
+    def __call__(self, full_table, bad_tables, good_tables, **kwargs):
+        """
+        table has been trimmed of extraneous columns.
+        """
+        self.setup_tables(full_table, bad_tables, good_tables, **kwargs)
+
+        clusters = self.get_partitions(full_table, bad_tables, good_tables, **kwargs)
+        self.all_clusters = clusters
 
         start = time.time()
-        _logger.debug("computing influences on %d", len(clusters))
-        clusters = filter(lambda c: c.error != -1e10000000, clusters)
-        clusters.sort(key=lambda c: c.error, reverse=True)
-        thresh = compute_clusters_threshold(clusters, nstds=1.5)
-        _logger.debug('computed influences  in %d', time.time()-start)
-
-
         _logger.debug('merging')
-        self.final_clusters = self.merge(clusters, thresh)        
-        self.final_clusters = filter(lambda c: not math.isinf(c.error) and not math.isnan(c.error), self.final_clusters)
+        self.final_clusters = self.merge(clusters)        
+        filt = lambda c: not math.isinf(c.error) and not math.isnan(c.error)
+        self.final_clusters = filter(filt, self.final_clusters)
         self.cost_merge = time.time() - start
 
 

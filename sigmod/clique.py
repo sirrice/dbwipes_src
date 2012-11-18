@@ -130,12 +130,17 @@ class MR(Basic):
 
 
         self.best.sort(reverse=True)
-        rules = [ro.rule for ro in self.best]
-        return self.merge_rules(rules)
+        return self.merge_rules(self.best)
 
-    def merge_rules(self, rules):
-        fill_in_rules(rules, self.full_table, cols=self.cols)
-        clusters = [Cluster.from_rule(r, self.cols) for r in rules]
+    def blah_to_cluster(self, blah):
+        rule = blah.rule
+        fill_in_rules([rule], self.full_table, self.cols)
+        c = Cluster.from_rule(rule, self.cols)
+        return c
+
+
+    def merge_rules(self, blahs):
+        clusters = map(self.blah_to_cluster, blahs)
 
         start = time.time()
 

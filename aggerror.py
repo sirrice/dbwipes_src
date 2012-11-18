@@ -20,6 +20,9 @@ class AggErr(object):
         self.erreq = metadata.get('erreq', None)
         self.metadata = metadata or {}
 
+    def __str__(self):
+        return str([str(self.agg), self.keys, self.npts, str(self.errtype), self.erreq])
+
     error_func = property(lambda self: self.__error_func__())
 
     def __error_func__(self):

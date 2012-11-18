@@ -395,8 +395,8 @@ class SDRule(object) :
                 cond = Orange.data.filter.ValueFilterContinuous(
                         position=idx,
                         oper = orange.ValueFilter.Between,
-                        min=sb.min,
-                        max=sb.max)
+                        min=fb.min,
+                        max=fb.max)
             conds.append(cond)
         
         ret = self.clone()

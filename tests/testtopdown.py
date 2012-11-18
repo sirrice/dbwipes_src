@@ -120,7 +120,7 @@ if __name__ == '__main__':
         
         errperc = 0.001
         np.seterr(all='raise')
-        topdown = BDT(aggerr=obj.errors[0],
+        topdown = Naive(aggerr=obj.errors[0],
                           errperc=errperc,
                           epsilon=0.0001,
                           cols=cols,
@@ -131,9 +131,12 @@ if __name__ == '__main__':
                           min_pts = 3,
                           min_improvement=.01,
                           granularity=10,
-                          max_wait=60,#None,
+                          max_wait=2*60,#None,
                           naive=False,#True,
-                          c=.30)
+                          use_mtuples=False,
+                          tablename=name, 
+                          use_cache=False,
+                          c=.12)
         clusters = topdown(full_table, bad_tables, good_tables)
         clusters = filter(lambda x:x, clusters)
 
@@ -145,7 +148,7 @@ if __name__ == '__main__':
         print "\n======Final Results====="
         print "Ideal: %d tuples" % len(get_ground_truth(full_table))
         for r in clusters_to_rules(best_clusters[:5], cols, table):
-            r = r.simplify()
+            #r = r.simplify()
 
             print '%.4f\t%d\t%s' % (r.quality, len(r.examples), sdrule_to_clauses(r)[0])
             acc, pre, rec = compute_stats(r, set(get_ground_truth(full_table)), full_table)

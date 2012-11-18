@@ -40,7 +40,7 @@ def generate_datasets(db, ndim, uo=30):
     id = add_config(db, tablename, 2000, ndim, ndim, 0.25, 10, 10, uo, 10, mid_box, high_box, c_high)
 
     # save the damn thing
-    save_pts(db, tablename, pts)
+    #save_pts(db, tablename, pts)
     
 
 def setup(db):
@@ -164,22 +164,28 @@ def compute_c_values(pts, mid_bounds, high_bounds, f=np.mean):
     
     highc = math.log(dh / dm) / math.log(1.*ch/cm)
     
-    highcs = []
-    for i in [1, 50, 100]:# xrange(1, 100, 10):
-        for n in xrange(100):
-            mid_samp = random.sample(mid_vs.difference(high_vs), i)#random.randint(1, 100))
-            high_samp = random.sample(high_vs,i)# random.randint(1, 100))
+    stats = []
+    for c in xrange(0, 50, 5):
+        c = c / 100.
+        minfs, hinfs = [], []
+        for n in xrange(5000):
+            mid_samp = random.sample(mid_vs.difference(high_vs), random.randint(1, 100))
+            high_samp = random.sample(high_vs, random.randint(1, 100))
             mix_samp = mid_samp + high_samp
             dm = orig - f(all_vs.difference(mix_samp)) 
             dh = orig - f(all_vs.difference(high_samp))
             ch, cm = float(len(high_samp)), float(len(mix_samp))
             if dh <= 0 or dm <= 0 or dh == dm or ch == cm:
                 continue
-            highc = math.log(dh / dm) / math.log(ch/cm)
-            highcs.append(highc)
-#            print '%d\t%.4f\t%.4f\t%.4f' % (i, highc, dh / 1., dm / 2.**highc)
-    highc = np.mean(highcs)
-    print '%d\t%.4f\t%.4f\t%.4f\t%.4f' % (i, highc, np.std(highcs), min(highcs), max(highcs))
+
+            minfs.append(dm / cm**c)
+            hinfs.append(dh / ch**c)
+
+        mmean, mstd = np.mean(minfs), np.std(minfs)
+        hmean, hstd = np.mean(hinfs), np.std(hinfs)
+        stats.append((c, mmean, mstd, hmean, hstd))
+        print ('\t%.4f'*5) % stats[-1]
+    return 0, 1
     return highc - .25*np.std(highcs), highc + .25*np.std(highcs)
 
     return highc
@@ -220,13 +226,15 @@ def run(sigmoddb, statsdb, tablename, bounds, **kwargs):
             'min_improvement' : 0.01,
             'c' : 0.0,
             'max_wait' : 20 * 60,
-            'klass' : BDT
+            'klass' : BDT,
+            'granularity' : 20
             }
 
     params.update(kwargs)
     klassname = params['klass'].__name__
     params['klassname'] = klassname
     params['dataset'] = tablename
+    params['use_mtuples'] = params.get('use_mtuples', True) and klassname == 'BDT'
 
 
     costs, rules, all_ids, table_size, learner = run_experiment(tablename, **params)
@@ -267,29 +275,23 @@ def run_tests(sigmoddb, statsdb, **params):
             pts = get_pts(sigmoddb, tablename)
             c_mid, c_high = compute_c_values(pts, config[-3], config[-2])
 
-            for klass in [Naive, BDT, NDT, MR]:
+            for klass in [BDT]:# [Naive, BDT, NDT, MR]:
                 for c in [c_mid, c_high]:
                     run(sigmoddb, statsdb, tablename, high_bounds, c=c, klass=klass, **params)
 
 statsdb = create_engine('postgresql://localhost/dbwipes')
 sigmoddb = create_engine('postgresql://localhost/sigmod')
-init_db(statsdb)
+
 tablename = 'data_2_30'
 config = get_config(sigmoddb, tablename)
-mid_bounds = config[-3]
-high_bounds = config[-2]
 pts = get_pts(sigmoddb, tablename)
-c_mid, c_high = compute_c_values(pts, config[-3], config[-2])
-print c_mid, c_high
+print compute_c_values(pts, config[-3], config[-2])
 
-
-
-
-run_tests(sigmoddb, statsdb, max_wait=30*60)
+#run_tests(sigmoddb, statsdb, max_wait=30*60, granularity=20, use_mtuples=True, use_cache=False)
 
 if False:
-    setup(db)
+    setup(sigmoddb)
     for uo in [30, 40, 50, 60, 70, 80, 90, 100]:
-        generate_datasets(db, 2, uo=uo)
-        generate_datasets(db, 3, uo=uo)
-        generate_datasets(db, 4, uo=uo)
+        generate_datasets(sigmoddb, 2, uo=uo)
+        generate_datasets(sigmoddb, 3, uo=uo)
+        generate_datasets(sigmoddb, 4, uo=uo)

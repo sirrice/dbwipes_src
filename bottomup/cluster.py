@@ -56,6 +56,15 @@ class Cluster(object):
         self.hash = None
         self._bound_hash = None
 
+    @staticmethod
+    def from_dict(thedict):
+        c = Cluster([], 0., [])
+        c.__dict__ = thedict
+        c.bbox = c.bbox and (tuple(c.bbox[0]), tuple(c.bbox[1])) or ((),())
+        c.cols = map(str, c.cols)
+        return c
+
+
     def __volume__(self):
         return volume(self.bbox)
     volume = property(__volume__)
