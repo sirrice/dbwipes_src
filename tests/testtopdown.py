@@ -136,9 +136,11 @@ if __name__ == '__main__':
                           use_mtuples=False,
                           tablename=name, 
                           use_cache=False,
+                          cs=[0., 0.1, 0.2],
                           c=.12)
         clusters = topdown(full_table, bad_tables, good_tables)
         clusters = filter(lambda x:x, clusters)
+        pdb.set_trace()
 
         all_clusters = normalize_cluster_errors([c.clone() for c in topdown.all_clusters])
         clusters = normalize_cluster_errors([c.clone() for c in clusters])
