@@ -126,14 +126,6 @@ def get_pts(db, tablename):
         q = """ select * from %s""" % tablename
         return [pt[1:] for pt in conn.execute(q).fetchall()]
 
-def get_ids_in_bounds(db ,tablename, bounds):
-    with db.begin() as conn:
-        where = ['%f <= a%d and a%d <= %f' % (minv, i, i, maxv) for i, (minv, maxv) in enumerate(map(tuple, bounds))]
-        where = ' and '.join(where)
-        q = """ select id from %s where %s""" % (tablename, where)
-        return [int(row[0]) for row in conn.execute(q)]
-
-
 
 
 def compute_c_values(pts, mid_bounds, high_bounds, f=np.mean):
@@ -195,7 +187,7 @@ def save_result(db, total_cost, costs, stats, rule, ids, dataset, notes, kwargs)
     ids_str = ','.join(map(str, ids))
     isbest = rule.isbest
     vals = [0, dataset, notes]
-    pkeys = ['klassname', 'cols', 'epsilon', 'c', 'lambda']
+    pkeys = ['klassname', 'cols', 'epsilon', 'c', 'lambda', 'boundtype']
     vals.extend([kwargs.get(key, None) for key in pkeys])
     vals.extend((total_cost, acc, p, r, f1, rule.quality, isbest, str(rule), ids_str))
     stat = vals
@@ -203,7 +195,7 @@ def save_result(db, total_cost, costs, stats, rule, ids, dataset, notes, kwargs)
 
     with db.begin() as conn:
         q = """insert into stats(expid, dataset, notes, klass, cols, epsilon, c,     
-                                 lambda, cost, acc, prec, recall, f1, score, 
+                                 lambda, boundtype, cost, acc, prec, recall, f1, score, 
                                  isbest, rule, ids) values(%s) returning id""" % (','.join(['%s']*len(stat)))
         sid = conn.execute(q, *stat).fetchone()[0]
 
@@ -217,7 +209,7 @@ def save_result(db, total_cost, costs, stats, rule, ids, dataset, notes, kwargs)
 
 
 
-def run(sigmoddb, statsdb, tablename, bounds, **kwargs):
+def run(sigmoddb, statsdb, tablename, all_bounds, **kwargs):
     params = {
             'epsilon' : 0.0005,
             'tau' : [0.1, 0.5],
@@ -235,24 +227,48 @@ def run(sigmoddb, statsdb, tablename, bounds, **kwargs):
     params['klassname'] = klassname
     params['dataset'] = tablename
     params['use_mtuples'] = params.get('use_mtuples', True) and klassname == 'BDT'
+    cs = params['cs']
 
 
-    costs, rules, all_ids, table_size, learner = run_experiment(tablename, **params)
-    truth = set(get_ids_in_bounds(sigmoddb, tablename, bounds))
-    all_stats = [compute_stats(ids, truth,  table_size) for ids in all_ids]
+
 
     if klassname == 'Naive':
-        rules = rules[:1]
-        all_ids = all_ids[:1]
+        print "running experiment"
+        costs, rules, all_ids, table_size, learner = run_experiment(tablename, **params)
+        print "computing stats and saving"
+        for bounds, boundtype in all_bounds:
+            params['boundtype'] = boundtype
 
-    for stats, rule, ids in zip(all_stats, rules, all_ids):
-        save_result(statsdb, costs['cost_total'], costs, stats, rule, ids, tablename, tablename, params)
+            truth = set(get_ids_in_bounds(sigmoddb, tablename, bounds))
+            for c, rules in learner.bests_per_c.items():
+                if not rules: continue
+                params['c'] = c
+                rule = max(rules, key=lambda r: r.quality)
+                ids = get_row_ids(rule, learner.full_table)
+                stats = compute_stats(ids, truth, table_size)
+                save_result(statsdb, costs['cost_total'], costs, stats, rule, ids, tablename, str(bounds), params)
 
-    if klassname == 'Naive':
-        for timein, rule in learner.checkpoints:
-            chk_ids = get_row_ids(rule, learner.full_table)
-            stats = compute_stats(chk_ids, truth, table_size)
-            save_result(statsdb, timein, {}, stats, rule, chk_ids, tablename, tablename, params)
+            for c, checkpoints in learner.checkpoints_per_c.items():
+                params['c'] = c
+                for timein, rule in checkpoints:
+                    chk_ids = get_row_ids(rule, learner.full_table)
+                    stats = compute_stats(chk_ids, truth, table_size)
+                    save_result(statsdb, timein, {}, stats, rule, chk_ids, tablename, str(bounds), params)
+        print "done"
+    else:
+        for c in cs:
+            params['c'] = c
+            print "running experiment"
+            costs, rules, all_ids, table_size, learner = run_experiment(tablename, **params)
+            print "computing stats and saving"
+
+            for bounds, boundtype in all_bounds:
+                params['boundtype'] = boundtype
+                truth = set(get_ids_in_bounds(sigmoddb, tablename, bounds))
+                all_stats = [compute_stats(ids, truth,  table_size) for ids in all_ids]
+                for stats, rule, ids in zip(all_stats, rules, all_ids):
+                    save_result(statsdb, costs['cost_total'], costs, stats, rule, ids, tablename, str(bounds), params)
+            print "done"
 
 
 def run_tests(sigmoddb, statsdb, **params):
@@ -265,19 +281,21 @@ def run_tests(sigmoddb, statsdb, **params):
      min_improvement: 0.01
     """
 
-    for ndim in  [2,3,4]:
+    for ndim in [2,3,4]:
         for uo in [30, 80]:
 
             tablename = "data_%d_%d" % (ndim, uo)
             config = get_config(sigmoddb, tablename)
             mid_bounds = config[-3]
             high_bounds = config[-2]
+            all_bounds = [(mid_bounds, 'mid'), (high_bounds, 'high')]
             pts = get_pts(sigmoddb, tablename)
-            c_mid, c_high = compute_c_values(pts, config[-3], config[-2])
+            cs = [0., 0.05, 0.1, 0.2, 0.5]
+#            c_mid, c_high = compute_c_values(pts, config[-3], config[-2])
 
-            for klass in [BDT]:# [Naive, BDT, NDT, MR]:
-                for c in [c_mid, c_high]:
-                    run(sigmoddb, statsdb, tablename, high_bounds, c=c, klass=klass, **params)
+            for klass in [BDT, NDT, MR]:
+#                for c in [c_mid, c_high]:
+                run(sigmoddb, statsdb, tablename, all_bounds, cs=cs, klass=klass, **params)
 
 statsdb = create_engine('postgresql://localhost/dbwipes')
 sigmoddb = create_engine('postgresql://localhost/sigmod')
@@ -285,9 +303,10 @@ sigmoddb = create_engine('postgresql://localhost/sigmod')
 tablename = 'data_2_30'
 config = get_config(sigmoddb, tablename)
 pts = get_pts(sigmoddb, tablename)
-print compute_c_values(pts, config[-3], config[-2])
+#print compute_c_values(pts, config[-3], config[-2])
 
-#run_tests(sigmoddb, statsdb, max_wait=30*60, granularity=20, use_mtuples=True, use_cache=False)
+init_db(statsdb)
+run_tests(sigmoddb, statsdb, max_wait=30*60, granularity=15, use_mtuples=True, use_cache=False)
 
 if False:
     setup(sigmoddb)

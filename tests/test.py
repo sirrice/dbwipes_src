@@ -213,7 +213,8 @@ def init_db(db):
         completed bool,
         rule text null,
         ids text null,
-        notes text null
+        notes text null,
+        boundtype text null
                 )""")
             conn.execute("""create table costs (
             id serial,

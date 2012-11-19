@@ -4,6 +4,7 @@ import random
 import numpy as np
 import sys
 import time
+import bsddb3
 sys.path.extend(['.', '..'])
 
 from itertools import chain, repeat
@@ -53,6 +54,9 @@ class Merger(object):
         self.stats = {}
         self.adj_graph = None
         self.use_mtuples = kwargs.get('use_mtuples', True)
+        self.use_cache = kwargs.get('use_cache', False)
+
+        self.cache = bsddb3.hashopen('./dbwipes.merger.cache')
         
         self.set_params(**kwargs)
 
@@ -63,6 +67,7 @@ class Merger(object):
         self.influence = kwargs.get('influence', self.influence)
         self.learner = kwargs.get('learner', self.learner)
         self.use_mtuples = kwargs.get('use_mtuples', self.use_mtuples)
+        self.use_cache = kwargs.get('use_cache', self.use_cache)
         
 
     def setup_stats(self, clusters):
@@ -296,6 +301,23 @@ class Merger(object):
         _logger.debug('\n')
         return cluster, rms
 
+    def cache_results(self):
+        pass
+
+    def load_from_cache(self):
+        """
+        if there is cached info, load it and use the loaded data to
+        1) replace structures like adj_graph and rtree
+        2) initialize mergeable clusters, etc
+
+        All state needs to be transient
+        - adj_graph
+        - rtree
+        - clusters list
+        - mergeable clusters
+        
+        """
+        pass
 
 
     @instrument
@@ -304,11 +326,6 @@ class Merger(object):
 
         
     def __call__(self, clusters, **kwargs):
-        """
-        if there is cached info, load it and use the loaded data to
-        1) replace structures like adj_graph and rtree
-        2) initialize mergeable clusters, etc
-        """
         if not clusters:
             return list(clusters)
 
@@ -317,7 +334,10 @@ class Merger(object):
         self.set_params(**kwargs)
         self.setup_stats(clusters)
         clusters_set = set(clusters)
+        # adj_graph is used to track adjacent partitions
         self.adj_graph = self.make_adjacency(clusters)
+        # rtree is static (computed once) to find base partitions within 
+        # a merged partition
         self.rtree = self.construct_rtree(clusters)
         results = []
 

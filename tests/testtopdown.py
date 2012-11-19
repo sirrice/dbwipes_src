@@ -11,6 +11,7 @@ from matplotlib.patches import Rectangle as Rect
 from matplotlib import cm 
 import matplotlib.pyplot as plt
 from collections import defaultdict
+from sqlalchemy import *
 
 from db import *
 from score import *
@@ -19,12 +20,13 @@ from arch import *
 from gentestdata import *
 from util import reconcile_tables
 from sigmod import *
+from common import *
 
 matplotlib.use("Agg")
 
 
 
-def print_clusters(pp, clusters, title=''):
+def print_clusters(pp, clusters, tuples=[], title=''):
     fig = plt.figure(figsize=(15, 15))
     sub = fig.add_subplot(111)
     clusters.sort(key=lambda c: c.error)
@@ -39,6 +41,11 @@ def print_clusters(pp, clusters, title=''):
         r = Rect((x[0], y[0]), x[1]-x[0], y[1]-y[0], alpha=max(0.1,cluster.error), ec=c, fill=False, lw=1.5)
         sub.add_patch(r)
 
+    if tuples:
+        xs, ys, cs = zip(*tuples)
+        sub.scatter(ys, xs, c=cs, alpha=0.4, lw=0)
+
+
     sub.set_ylim(-5, 105)
     sub.set_xlim(-5, 105)
     sub.set_title(title)
@@ -46,149 +53,81 @@ def print_clusters(pp, clusters, title=''):
 
 
 
+def run(pp, dataset, bounds, **params):
+    sigmoddb = create_engine('postgresql://localhost/sigmod')
+    costs, rules, all_ids, table_size, learner = run_experiment(dataset, **params)
+    truth = set(get_ids_in_bounds(sigmoddb, dataset, bounds))
+    all_stats = [compute_stats(ids, truth,  table_size) for ids in all_ids]
 
-def compute_stats(r, bad_tuple_ids, table):
-    all_found_ids = set()
+#    print "\n".join(map(str, learner.costs.items()))
+#    for stats, rule, ids in zip(all_stats, rules, all_ids):
+#        print stats, '\t', str(sdrule_to_clauses(rule)[0])
 
-    indiv_stats = []
-    found_ids = set([row['id'].value for row in r(table)])
-    all_found_ids.update(found_ids)
-    n = len(found_ids)        
-    tp = len(bad_tuple_ids.intersection(found_ids))
-    fn = len(bad_tuple_ids.difference(found_ids))
-    fp = len(found_ids.difference(bad_tuple_ids))
-    tn = len(table) - tp - fn - fp
+    try:
+        all_clusters = normalize_cluster_errors(learner.all_clusters)
+        clusters = normalize_cluster_errors([c.clone() for c in learner.final_clusters])
+        best_clusters = sorted(clusters, key=lambda c: c.error, reverse=True)[:1]
 
-    accuracy = float(tp + tn) / len(table)
-    precision = float(tp) / (tp + fp) if n and (tp+fp) else 0.
-    recall = float(tp) / (tp + fn) if n and (tp+fn) else 0.
+        tuples = get_tuples_in_bounds(sigmoddb, dataset, bounds, 'g >= 7 ')
+        cols = zip(*tuples)
+        tuples = zip(cols[1], cols[2], [v / 100. for v in cols[-1]])
 
-    return accuracy, precision, recall
-
-
-
+        #print_clusters(pp, all_clusters, tuples=tuples, title="all clusters")
+        print_clusters(pp, clusters,  tuples=tuples,title="merged clusters %.4f" % params['c'])
+        print_clusters(pp, best_clusters[:10],  tuples=tuples, title="best clusters %.4f" % params['c'])
+    except:
+        pass
 
 
 
 
+       
 
 if __name__ == '__main__':
-    random.seed(0)
-
-    def kname(klass):
-        return klass.__name__[-7:]
-
-
-
-    def strip_columns(table, aggerr):
-        cols = [attr.name for attr in table.domain
-                if attr.name not in ['id', 'err', 'epochid', 'date'] and attr.name not in aggerr.agg.cols]
-        all_cols = cols + aggerr.agg.cols
-        torm = [attr.name for attr in table.domain if attr.name not in all_cols]
-        table = rm_attr_from_domain(table, torm)
-        return table, cols
-
-
-    def run_experiment(datasetidx, nbadresults=10):
-        name = datasetnames[datasetidx]
-        outname = name
-        print name
-        pp = PdfPages('figs/topdown_%s.pdf' % outname)
-
-        test_data = get_test_data(name, nbadresults = nbadresults)
-        dbname, sql, badresults, goodresults, errtype, get_ground_truth = test_data
-        get_ground_truth = test_data[-1]
-        obj, table = create_sharedobj(*test_data[:-1])
-        aggerr = obj.errors[0]
-
-
-        # retrieve table for each good and bad key
-        obj.db = connect(dbname)
-        bad_tables = get_provenance_split(obj, aggerr.agg.cols, aggerr.keys) or []
-        good_tables = get_provenance_split(obj, aggerr.agg.cols, obj.goodkeys[aggerr.agg.shortname]) or []
-        obj.db.close()
-
-        (bad_tables, good_tables), full_table = reconcile_tables(bad_tables, good_tables)
-        _, full_table = reconcile_tables(bad_tables)
-
-        # strip unnecessary columns
-        table, cols = strip_columns(table, aggerr)
-        bad_tables = [strip_columns(t, aggerr)[0] for t in bad_tables]
-        good_tables = [strip_columns(t, aggerr)[0] for t in good_tables]
-        table = full_table
-        print cols
-        
-        errperc = 0.001
-        np.seterr(all='raise')
-        topdown = Naive(aggerr=obj.errors[0],
-                          errperc=errperc,
-                          epsilon=0.0001,
-                          cols=cols,
-                          msethreshold=.25,
-                          tau=[0.1, 0.75],
-                          p = 0.8,
-                          l=.5,
-                          min_pts = 3,
-                          min_improvement=.01,
-                          granularity=10,
-                          max_wait=2*60,#None,
-                          naive=False,#True,
-                          use_mtuples=False,
-                          tablename=name, 
-                          use_cache=False,
-                          cs=[0., 0.1, 0.2],
-                          c=.12)
-        clusters = topdown(full_table, bad_tables, good_tables)
-        clusters = filter(lambda x:x, clusters)
-        pdb.set_trace()
-
-        all_clusters = normalize_cluster_errors([c.clone() for c in topdown.all_clusters])
-        clusters = normalize_cluster_errors([c.clone() for c in clusters])
-        best_clusters = sorted(clusters, key=lambda c: c.error, reverse=True)[:10]
-        print "\n".join(map(str, topdown.costs.items()))
-
-        print "\n======Final Results====="
-        print "Ideal: %d tuples" % len(get_ground_truth(full_table))
-        for r in clusters_to_rules(best_clusters[:5], cols, table):
-            #r = r.simplify()
-
-            print '%.4f\t%d\t%s' % (r.quality, len(r.examples), sdrule_to_clauses(r)[0])
-            acc, pre, rec = compute_stats(r, set(get_ground_truth(full_table)), full_table)
-            print acc, pre, rec
-
-
-        try:
-            print_clusters(pp, all_clusters, title="all clusters")
-            print_clusters(pp, clusters, title="merged clusters")
-            print_clusters(pp, best_clusters[:10], title="best clusters")
-        except:
-            pass
-
-
-
-            
-        pp.close()
-        return
-
-        cluster = None
-        while True:
-            print "set cluster to a value"
-            pdb.set_trace()
-            if not cluster:
-                break
-            pp = PdfPages('figs/topdown_%s.pdf' % outname)
-            topdown.merger.adj_matrix.insert(cluster)
-            neighbors = topdown.merger.adj_matrix.neighbors(cluster)
-            for n in neighbors:
-                n.error = 0.5
-            cluster.error = 1
-            print_clusters(pp, list(neighbors) + [cluster], title='foo')
-
-            pp.close()
-
-
-
+    np.seterr(all='raise')
     nbadresults = 10
     idxs = sys.argv[1:] or [0,1]
-    for idx in idxs:
-        run_experiment(idx, nbadresults=nbadresults)
+    bounds = [[42.2210925762524, 92.2210925762524], [37.89772014701512, 87.89772014701512]] 
+    pp = PdfPages('figs/topdown_all.pdf')
+    for dataset in idxs:
+        for c in [0., 0.05, 0.1, 0.2, 0.3, 0.5]:
+            run(pp, dataset, bounds,
+                  klass=BDT, 
+                  nbadresults = nbadresults,
+                  epsilon=0.0001,
+                  tau=[0.1, 0.75],
+                  p = 0.8,
+                  l=.5,
+                  min_pts = 3,
+                  min_improvement=.01,
+                  granularity=10,
+                  max_wait=60,#None,
+                  naive=False,#True,
+                  use_mtuples=False,
+                  tablename=dataset, 
+                  use_cache=True,
+                  cs=[0., 0.1, 0.2],
+                  c=c)
+
+    pp.close()
+
+#
+#        cluster = None
+#        while True:
+#            print "set cluster to a value"
+#            pdb.set_trace()
+#            if not cluster:
+#                break
+#            pp = PdfPages('figs/topdown_%s.pdf' % outname)
+#            topdown.merger.adj_matrix.insert(cluster)
+#            neighbors = topdown.merger.adj_matrix.neighbors(cluster)
+#            for n in neighbors:
+#                n.error = 0.5
+#            cluster.error = 1
+#            print_clusters(pp, list(neighbors) + [cluster], title='foo')
+#
+#            pp.close()
+#
+#
+
+

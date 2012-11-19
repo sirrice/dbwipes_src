@@ -389,6 +389,7 @@ class SDRule(object) :
                         values = [orange.Value(attr, val) for val in svals]
                         )
             else:
+                continue
                 if sb.min == fb.min and sb.max == fb.max:
                     continue
 

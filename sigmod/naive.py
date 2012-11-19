@@ -32,7 +32,6 @@ class Naive(Basic):
         self.stop = False
         self.cs = kwargs.get('cs', None)
 
-#        self.checkpoints = []
         self.checkpoints_per_c = defaultdict(list)
 
 
@@ -45,7 +44,10 @@ class Naive(Basic):
             self.cs = [self.c]
         
         self.bests_per_c = defaultdict(list)
-#        self.bests = []
+        for c in self.cs:
+            self.bests_per_c[c] = list()
+            self.checkpoints_per_c[c] = list()
+
         self.max_complexity = kwargs.get('max_complexity', self.max_complexity)
         self.granularity = kwargs.get('granularity', self.granularity)
         discretes = [attr for attr in full_table.domain 
@@ -73,7 +75,7 @@ class Naive(Basic):
         # options for each clause c_i
         # 1) extend c_i to the left, to the right
         # 2) append a new clause
-        rules = self.bests.values()[0]
+        rules = self.bests_per_c[self.cs[0]]
         rules.sort(key=lambda r: r.quality, reverse=True)
         _logger.debug("best\n%s", "\n".join(map(lambda r: '%.4f\t%s' % (r.quality, str(r)), rules)))
 
@@ -107,11 +109,16 @@ class Naive(Basic):
                 self.n_rules_checked -= len(clauses)
                 if self.n_rules_checked <= 0:
                     diff = time.time() - self.start
-                    if not self.checkpoints_per_c or not self.checkpoints_per_c[self.cs[0]] or diff - self.checkpoints_per_c[self.cs[0]][-1][0] > 10:
-                        for c, bests in self.bests_per_c.items():
+                    for c in self.cs:
+                        if (not self.checkpoints_per_c or 
+                            not self.checkpoints_per_c[c] or 
+                            diff - self.checkpoints_per_c[c][-1][0] > 10):
+                            bests = self.bests_per_c[c]
                             if bests:
-                                best_rule = max(bests, key=lambda r: r.quality).clone()
-                                self.checkpoints_per_c[c].append((diff, best_rule))
+                                best_rule = max(bests, key=lambda r: r.quality)
+                                clone = best_rule.clone()
+                                clone.quality = best_rule.quality
+                                self.checkpoints_per_c[c].append((diff, clone))
                     self.stop = diff > self.max_wait
                     self.n_rules_checked = 100
 
@@ -124,17 +131,19 @@ class Naive(Basic):
                 if max_card is not None and self.max_card_in_conds(clauses) < max_card:
                     continue
 
-                for c in self.cs:
-                    new_rule.quality = self.influence(new_rule, c=c)
-                    if math.isnan(new_rule.quality) or new_rule.quality == -1e100000000:
+                influences = self.influences(new_rule, cs=self.cs)
+                for c, inf in zip(self.cs, influences):
+                    clone = new_rule.clone()
+                    clone.quality = inf
+                    clone.__examples__ = None
+
+                    if math.isnan(clone.quality) or clone.quality == -1e100000000:
                         continue
 
-                    bests = self.bests_per_c.get(c, [])
-                    if len(bests) < self.max_bests:
-                        heapq.heappush(bests, new_rule.clone())
+                    if len(self.bests_per_c[c]) < self.max_bests:
+                        heapq.heappush(self.bests_per_c[c], clone)
                     else:
-                        heapq.heapreplace(bests, new_rule.clone())
-
+                        heapq.heapreplace(self.bests_per_c[c], clone)
                 new_rule.__examples__ = None
 
     def dfs(self, *iterables, **kwargs):

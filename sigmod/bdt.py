@@ -45,6 +45,17 @@ class BDT(Basic):
         self.cost_partition_bad = 0.
         self.cost_partition_good = 0.
 
+    def __hash__(self):
+        components = [
+                self.__class__.__name__,
+                str(self.aggerr.__class__.__name__),
+                str(set(self.cols)),
+                self.err_func.__class__.__name__,
+                self.tablename
+                ]
+        components = map(str, components)
+        return hash('\n'.join(components))
+ 
 
     def setup_tables(self, full_table, bad_tables, good_tables, **kwargs):
         Basic.setup_tables(self, full_table, bad_tables, good_tables, **kwargs)

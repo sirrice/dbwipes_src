@@ -115,6 +115,27 @@ class Basic(object):
         return Basic.influence(self, rule)
 
 
+    def influences(self, rule, cs=[]):
+        """
+        compute influences for a list of c values
+        """
+        bdeltas, bcounts = self.bad_influences(rule)
+        gdeltas, gcounts = self.good_influences(rule)
+        gdeltas = map(abs, gdeltas)
+        
+        ret = []
+        for c in cs:
+            binfs = [bdelta/(bcount**c) for bdelta,bcount in zip(bdeltas, bcounts) if bcount]
+            ginfs = [gdelta for gdelta,gcount in zip(gdeltas, gcounts) if gcount]
+            
+            binf = binfs and np.mean(binfs) or -1e10000000
+            ginf = ginfs and max(ginfs) or 0
+            inf = self.l * binf - (1. - self.l) * ginf
+
+            ret.append(inf)
+        return ret
+
+
 
     def influence(self, rule, c=None):
         bdeltas, bcounts = self.bad_influences(rule)

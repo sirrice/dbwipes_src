@@ -16,7 +16,7 @@ getData = function(dbname, sql) {
 
 
 dbname = 'dbwipes'
-clevels = c(0., 0.25, .5, .75, 1.)
+clevels = c(0., 0.05, 0.1, 0.2, 0.25, .5, .75, 1.)
 dlevels = c('INTEL', 'EXPENSE', 'SYNTH-2D', 'HARD')
 did2name = function(data) {
     data$datasetname = data$dataset
@@ -31,15 +31,15 @@ return (data)
 # Plot the naive curve for a given dataset:
 # each line is a c value
 #
-query = "
-select expid, klass, dataset, cols, c, cost, prec, epsilon, recall, f1, score, rule
-from stats
-where %s
-"
-
 where = "expid in (38, 39, 40)"
 
 plot_naive = function(where){
+    query = "
+    select expid, klass, dataset, cols, c, cost, prec, epsilon, recall, f1, score, notes, boundtype
+    from stats
+    where %s
+    "
+
     data = getData('dbwipes', sprintf(query, where))
     data$c = factor(data$c, clevels)
     data = did2name(data)
@@ -54,7 +54,7 @@ plot_naive = function(where){
 }
 
 printpdf = function(plot, fname) {
-    pdf(file='naive.pdf', width=8, height=3)
+    pdf(file=fname, width=8, height=10)
     print(plot)
     dev.off()
 }

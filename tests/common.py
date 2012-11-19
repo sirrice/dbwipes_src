@@ -24,6 +24,26 @@ matplotlib.use("Agg")
 def get_row_ids(r, table):
     return set([row['id'].value for row in r(table)])
 
+def get_tuples_in_bounds(db ,tablename, bounds, additional_where=''):
+    with db.begin() as conn:
+        where = ['%f <= a%d and a%d <= %f' % (minv, i, i, maxv) for i, (minv, maxv) in enumerate(map(tuple, bounds))]
+        if additional_where:
+            where.append(additional_where)
+        where = ' and '.join(where)
+        q = """ select * from %s where %s""" % (tablename, where)
+        return [map(float, row) for row in conn.execute(q)]
+
+
+
+def get_ids_in_bounds(db ,tablename, bounds):
+    with db.begin() as conn:
+        where = ['%f <= a%d and a%d <= %f' % (minv, i, i, maxv) for i, (minv, maxv) in enumerate(map(tuple, bounds))]
+        where = ' and '.join(where)
+        q = """ select id from %s where %s""" % (tablename, where)
+        return [int(row[0]) for row in conn.execute(q)]
+
+
+
 
 def compute_stats(found_ids, bad_tuple_ids, table_size):
     bad_tuple_ids = set(bad_tuple_ids)
@@ -112,7 +132,7 @@ def get_rules(full_table, bad_tables, good_tables, **kwargs):
     for c in clusters:
         c.isbest = (c.error >= thresh)
     merged = list(clusters_to_rules(clusters, cols, full_table))
-    merged = [r.simplify() for r in merged]
+    #merged = [r.simplify() for r in merged]
 
     costs['cost_total'] = cost
     return costs, merged, learner
