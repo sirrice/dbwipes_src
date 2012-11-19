@@ -1,3 +1,4 @@
+import json
 import math
 import pdb
 import random
@@ -301,10 +302,26 @@ class Merger(object):
         _logger.debug('\n')
         return cluster, rms
 
-    def cache_results(self):
-        pass
+    def cache_results(self, clusters_set, mergable_clusters):
+        try:
+            myhash = str(hash(self.learner))
+            c = str(self.learner.c)
+            key = '%s:%s' % (myhash, c)
 
-    def load_from_cache(self):
+            clusters_set = [cluster.to_dict() for cluster in clusters_set]
+            mergable_clusters = [cluster.to_dict() for cluster in mergable_clusters]
+            self.cache[key] = json.dumps((clusters_set, mergable_clusters))
+
+            cs_to_keys = json.loads(self.cache[myhash]) if myhash in self.cache else {}
+            cs_to_keys[c] = key
+            self.cache[myhash] = json.dumps(cs_to_keys)
+        except:
+            import traceback
+            traceback.print_exc()
+
+
+
+    def load_from_cache(self, clusters):
         """
         if there is cached info, load it and use the loaded data to
         1) replace structures like adj_graph and rtree
@@ -315,9 +332,46 @@ class Merger(object):
         - rtree
         - clusters list
         - mergeable clusters
+        - clusters_set
         
         """
-        pass
+        myhash = str(hash(self.learner))
+        c = self.learner.c
+        if self.use_cache and myhash in self.cache:
+            try:
+                cs_to_keys = json.loads(self.cache[myhash])
+                cs_to_keys = dict([(float(k),v) for k,v in cs_to_keys.iteritems()])
+                cs = [other_c for other_c in cs_to_keys if other_c >= c]
+                key = str(cs_to_keys[min(cs)])
+                matches = c == min(cs)
+
+                clusters_set, mergable_clusters = json.loads(self.cache[key])
+                clusters_set = set(map(Cluster.from_dict, clusters_set))
+                mergable_clusters = map(Cluster.from_dict, mergable_clusters)
+
+                also_mergable = []
+                for cluster in filter(self.is_mergable, clusters):
+                    useless = False
+                    for mc in mergable_clusters:
+                        useless = useless or mc.contains(cluster)
+                        if useless:
+                            break
+                    if not useless:
+                        also_mergable.append(cluster)
+                 
+                mergable_clusters.extend(also_mergable)
+                clusters_set.update(also_mergable)
+
+                return matches, clusters_set, mergable_clusters
+            except:
+                import traceback
+                traceback.print_exc()
+
+
+        clusters_set = set(clusters)
+        mergable_clusters = filter(self.is_mergable, clusters)
+        mergable_clusters.sort(key=lambda mc: mc.error, reverse=True)
+        return False, clusters_set, mergable_clusters
 
 
     @instrument
@@ -333,18 +387,18 @@ class Merger(object):
 
         self.set_params(**kwargs)
         self.setup_stats(clusters)
-        clusters_set = set(clusters)
+
         # adj_graph is used to track adjacent partitions
         self.adj_graph = self.make_adjacency(clusters)
         # rtree is static (computed once) to find base partitions within 
         # a merged partition
         self.rtree = self.construct_rtree(clusters)
-        results = []
 
+        # load state from cache
+        can_stop = clusters_set, mergable_clusters = self.load_from_cache(clusters)
+        if can_stop:
+            return sorted(clusters_set, key=lambda c: c.error, reverse=True)
 
-        mergable_clusters = filter(self.is_mergable, clusters)
-        mergable_clusters.sort(key=lambda mc: mc.error, reverse=True)
- 
         while len(clusters_set) > self.min_clusters:
 
             cur_clusters = sorted(clusters_set, key=lambda c: c.error, reverse=True)
@@ -413,6 +467,8 @@ class Merger(object):
             mergable_clusters = sorted(new_clusters, key=lambda c: c.error, reverse=True)
 
         clusters_set = filter(lambda c: c.error != -1e10000000, clusters_set) 
+
+        self.cache_results(clusters_set, mergable_clusters)
         return sorted(clusters_set, key=lambda c: c.error, reverse=True)
             
     

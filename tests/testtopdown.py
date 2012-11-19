@@ -59,7 +59,7 @@ def run(pp, dataset, bounds, **params):
     truth = set(get_ids_in_bounds(sigmoddb, dataset, bounds))
     all_stats = [compute_stats(ids, truth,  table_size) for ids in all_ids]
 
-#    print "\n".join(map(str, learner.costs.items()))
+    print "\n".join(map(str, learner.costs.items()))
 #    for stats, rule, ids in zip(all_stats, rules, all_ids):
 #        print stats, '\t', str(sdrule_to_clauses(rule)[0])
 
@@ -90,7 +90,7 @@ if __name__ == '__main__':
     bounds = [[42.2210925762524, 92.2210925762524], [37.89772014701512, 87.89772014701512]] 
     pp = PdfPages('figs/topdown_all.pdf')
     for dataset in idxs:
-        for c in [0., 0.05, 0.1, 0.2, 0.3, 0.5]:
+        for c in reversed([0., 0.05, 0.1, 0.2, 0.3, 0.5]):
             run(pp, dataset, bounds,
                   klass=BDT, 
                   nbadresults = nbadresults,

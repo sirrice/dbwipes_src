@@ -59,10 +59,16 @@ class Cluster(object):
     @staticmethod
     def from_dict(thedict):
         c = Cluster([], 0., [])
-        c.__dict__ = thedict
+        c.__dict__.update(thedict)
         c.bbox = c.bbox and (tuple(c.bbox[0]), tuple(c.bbox[1])) or ((),())
         c.cols = map(str, c.cols)
         return c
+
+    def to_dict(self):
+        d = dict(self.__dict__)
+        if 'parents' in d:
+            del d['parents']
+        return d
 
 
     def __volume__(self):
