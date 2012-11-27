@@ -1,3 +1,4 @@
+import time
 import logging
 import sys
 import random
@@ -54,6 +55,19 @@ class GlobalLogger(object):
 
 get_logger = GlobalLogger()
 
+
+def instrument(fn):
+    func_name = fn.__name__
+    def w(self, *args, **kwargs):
+        start = time.time()
+        ret = fn(self, *args, **kwargs)
+
+        if func_name not in self.stats:
+            self.stats[func_name] = [0, 0]
+        self.stats[func_name][0] += (time.time() - start)
+        self.stats[func_name][1] += 1
+        return ret
+    return w
 
 
 

@@ -194,12 +194,12 @@ def save_result(db, total_cost, costs, stats, rule, ids, dataset, notes, kwargs)
 
 
     with db.begin() as conn:
-        q = """insert into stats(expid, dataset, notes, klass, cols, epsilon, c,     
+        q = """insert into stats_cache(expid, dataset, notes, klass, cols, epsilon, c,     
                                  lambda, boundtype, cost, acc, prec, recall, f1, score, 
                                  isbest, rule, ids) values(%s) returning id""" % (','.join(['%s']*len(stat)))
         sid = conn.execute(q, *stat).fetchone()[0]
 
-        q = """insert into costs(sid, name, cost) values(%s,%s,%s)"""
+        q = """insert into costs_cache(sid, name, cost) values(%s,%s,%s)"""
         for name, cost in costs.items():
             if isinstance(cost, list):
                 cost = cost[0]
@@ -208,8 +208,33 @@ def save_result(db, total_cost, costs, stats, rule, ids, dataset, notes, kwargs)
 
 
 
+def compute_stats_from_bounds(sigmoddb, learner, dataset, bounds, table_size, ids):
+    try:
+        truth = set(get_ids_in_bounds(sigmoddb, dataset, bounds))
+        return compute_stats(ids, truth,  table_size)
+    except:
+        print "defaulting"
+        return learner.compute_stats(ids)
+
+def compute_all_stats_from_bounds(sigmoddb, learner, dataset, bounds, table_size, all_ids):
+    try:
+        truth = set(get_ids_in_bounds(sigmoddb, dataset, bounds))
+        return [compute_stats(ids, truth,  table_size) for ids in all_ids]
+    except:
+        print "defaulting"
+        return map(learner.compute_stats,all_ids)
+
+
+
 
 def run(sigmoddb, statsdb, tablename, all_bounds, **kwargs):
+
+    try:
+        os.system('rm *.cache')
+    except:
+        pass
+
+
     params = {
             'epsilon' : 0.0005,
             'tau' : [0.1, 0.5],
@@ -239,23 +264,25 @@ def run(sigmoddb, statsdb, tablename, all_bounds, **kwargs):
         for bounds, boundtype in all_bounds:
             params['boundtype'] = boundtype
 
-            truth = set(get_ids_in_bounds(sigmoddb, tablename, bounds))
+
             for c, rules in learner.bests_per_c.items():
                 if not rules: continue
                 params['c'] = c
                 rule = max(rules, key=lambda r: r.quality)
                 ids = get_row_ids(rule, learner.full_table)
-                stats = compute_stats(ids, truth, table_size)
+                stats = compute_stats_from_bounds(sigmoddb, learner, tablename, bounds, table_size, ids)
                 save_result(statsdb, costs['cost_total'], costs, stats, rule, ids, tablename, str(bounds), params)
 
             for c, checkpoints in learner.checkpoints_per_c.items():
                 params['c'] = c
                 for timein, rule in checkpoints:
                     chk_ids = get_row_ids(rule, learner.full_table)
-                    stats = compute_stats(chk_ids, truth, table_size)
+                    stats = compute_stats_from_bounds(sigmoddb, learner,  tablename, bounds, table_size, chk_ids)
                     save_result(statsdb, timein, {}, stats, rule, chk_ids, tablename, str(bounds), params)
         print "done"
     else:
+        if klassname != 'BDT':
+            params['use_mtuples'] = False
         for c in cs:
             params['c'] = c
             print "running experiment"
@@ -264,8 +291,9 @@ def run(sigmoddb, statsdb, tablename, all_bounds, **kwargs):
 
             for bounds, boundtype in all_bounds:
                 params['boundtype'] = boundtype
-                truth = set(get_ids_in_bounds(sigmoddb, tablename, bounds))
-                all_stats = [compute_stats(ids, truth,  table_size) for ids in all_ids]
+#                truth = set(get_ids_in_bounds(sigmoddb, tablename, bounds))
+#                all_stats = [compute_stats(ids, truth,  table_size) for ids in all_ids]
+                all_stats = compute_all_stats_from_bounds(sigmoddb, learner, tablename, bounds, table_size, all_ids)
                 for stats, rule, ids in zip(all_stats, rules, all_ids):
                     save_result(statsdb, costs['cost_total'], costs, stats, rule, ids, tablename, str(bounds), params)
             print "done"
@@ -281,8 +309,8 @@ def run_tests(sigmoddb, statsdb, **params):
      min_improvement: 0.01
     """
 
-    for ndim in [2,3,4]:
-        for uo in [30, 80]:
+    for ndim in [4]:# [2,3,4]:
+        for uo in [30]:#[30, 80]:
 
             tablename = "data_%d_%d" % (ndim, uo)
             config = get_config(sigmoddb, tablename)
@@ -290,23 +318,27 @@ def run_tests(sigmoddb, statsdb, **params):
             high_bounds = config[-2]
             all_bounds = [(mid_bounds, 'mid'), (high_bounds, 'high')]
             pts = get_pts(sigmoddb, tablename)
-            cs = [0., 0.05, 0.1, 0.2, 0.5]
-#            c_mid, c_high = compute_c_values(pts, config[-3], config[-2])
+            cs = reversed([0., 0.05, 0.075, 0.09, 0.1, 0.15, 0.2, 0.5])
+            cs = [0.5, 0.2]
 
-            for klass in [BDT, NDT, MR]:
-#                for c in [c_mid, c_high]:
+            for klass in [BDT]:
                 run(sigmoddb, statsdb, tablename, all_bounds, cs=cs, klass=klass, **params)
 
 statsdb = create_engine('postgresql://localhost/dbwipes')
 sigmoddb = create_engine('postgresql://localhost/sigmod')
+init_db(statsdb)
+
+
+
+#for dataset in ['0', '11']:
+#    for klass in [MR,BDT,NDT]:
+#        run(sigmoddb, statsdb, dataset, [(None, 'none')], cs=[0,0.05,0.075,0.09,0.1,0.15,0.2,0.5], klass=klass, granularity=15, use_mtuples=True, use_cache=False)
+#exit()
 
 tablename = 'data_2_30'
 config = get_config(sigmoddb, tablename)
 pts = get_pts(sigmoddb, tablename)
-#print compute_c_values(pts, config[-3], config[-2])
-
-init_db(statsdb)
-run_tests(sigmoddb, statsdb, max_wait=30*60, granularity=15, use_mtuples=True, use_cache=False)
+run_tests(sigmoddb, statsdb, max_wait=12*60, granularity=15, use_mtuples=True, use_cache=True)
 
 if False:
     setup(sigmoddb)

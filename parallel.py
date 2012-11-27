@@ -91,14 +91,17 @@ def serial_hybrid(obj, aggerr, **kwargs):
 
         bad_tables = [rm_attr_from_domain(t, torm) for t in bad_tables]
         good_tables = [rm_attr_from_domain(t, torm) for t in good_tables]
-        (bad_tables, good_tables), full_table = reconcile_tables(bad_tables, good_tables)
+        (bad_tables, good_tables), all_full_table = reconcile_tables(bad_tables, good_tables)
         _, full_table = reconcile_tables(bad_tables)
 
 
         params = dict(kwargs)
         params.update({
             'aggerr':aggerr,
-            'cols':cols})
+            'cols':cols,
+            'c' : 0.3,
+            'l' : 0.5
+            })
             # errperc=0.001,
             # 
             # msethreshold=0.01,
@@ -108,19 +111,32 @@ def serial_hybrid(obj, aggerr, **kwargs):
             # complexity_multiplier=1.5)
 
 
-        if aggerr.agg.func in (errfunc.SumErrFunc, errfunc.CountErrFunc):
-            klass = BDT
-        else:
-            klass = MR
+        if aggerr.agg.func.__class__ in (errfunc.SumErrFunc, errfunc.CountErrFunc):
+            klass = MR 
+            params.update({
+                'use_mtuples': False
+                })
 
+        else:
+            klass = BDT
+            params.update({
+                'use_cache': False,
+                'use_mtuples': False,#True,
+                'epsilon': 0.005,
+                'min_improvement': 0.01,
+                'tau': [0.05, 0.3],
+                'c' : 0.6,
+                'p': 0.5
+                })
 
         start = time.time()
         hybrid = klass(**params)
-        clusters = hybrid(full_table, bad_tables, good_tables)
-        clusters = filter(lambda c: c.error >= 0, clusters)
+        clusters = hybrid(all_full_table, bad_tables, good_tables)
+        #clusters = filter(lambda c: c.error >= 0, clusters)
         normalize_cluster_errors(clusters)
         clusters.sort(key=lambda c: c.error, reverse=True)
         rules = clusters_to_rules(clusters, cols, full_table)
+        #rules = [r.simplify(all_full_table) for r in rules]
         
 
 

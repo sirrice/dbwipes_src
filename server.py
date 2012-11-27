@@ -111,11 +111,11 @@ def intel_query():
         where = request.form.get('filter', '') 
 
         if not sql:
-            sql = """SELECT avg(temp), stddev(temp),
-    ((extract(epoch from date+time - '2004-3-1'::timestamp)) / (30*60)) :: int as dist
-FROM readings
-WHERE date+time > '2004-3-1'::timestamp and date+time < '2004-3-5'::timestamp
-GROUP BY dist ORDER BY dist"""
+            sql = """SELECT avg(temp), stddev(temp), date_trunc('hour',(date) + (time)) as dt
+            FROM readings
+            WHERE (((date) + (time)) > '2004-3-1') and (((date) + (time)) < '2004-3-5')
+            GROUP BY dt
+            ORDER BY dt ASC"""
 
         obj = get_query_sharedobj(sql, delids)
         if where.strip():
@@ -276,10 +276,11 @@ def create_filter_options(obj):
             # print "\t", clause
 
             tmpq = obj.clone()
-            clause = 'not (%s)' % clause 
-            tmpq.add_where( clause )
+            cwhere = 'not (%s)' % clause 
+            tmpq.add_where( cwhere )
+            clause_parts = [c.strip() for c in clause.split(' and ')]
 
-            filter_opts[label].append( (clause, tmpq.sql, clause, json.dumps({}), idx) )
+            filter_opts[label].append( (clause_parts, tmpq.sql, cwhere, json.dumps({}), idx) )
             idx += 1
     return filter_opts
 

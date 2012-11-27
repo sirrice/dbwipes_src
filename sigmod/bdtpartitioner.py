@@ -38,6 +38,8 @@ class Node(object):
         self.n = 0
         self.influence = -inf
         self.prev_attr = None
+        self.prev_score = None
+        self.prev_scores = []
         self.score = inf
 
 
@@ -71,7 +73,7 @@ class BDTTablesPartitioner(Basic):
         self.epsilon = kwargs.get('epsilon', 0.005)
         self.min_pts = 5
         self.SCORE_ID = kwargs['SCORE_ID']
-        self.inf_bounds = [inf, -inf]
+        self.inf_bounds = None 
         self.min_improvement = kwargs.get('min_improvement', .01)
 
         self.sampler = Sampler(self.SCORE_ID)
@@ -93,6 +95,8 @@ class BDTTablesPartitioner(Basic):
         self.sampler = Sampler(self.SCORE_ID)
         self.samp_rates = [best_sample_size(len(t), self.epsilon)/(float(len(t))+1) for t in self.tables]
 
+        self.inf_bounds = [[inf, -inf] for table in tables]
+
 
     def __call__(self, tables, full_table, **kwargs):
         self.setup_tables(tables, full_table)
@@ -111,24 +115,31 @@ class BDTTablesPartitioner(Basic):
             if len(sample) < self.min_pts:
                 return True
             h = lambda row: self.influence(row, idx)
-            infmax = max(map(h, sample))
-            thresh = self.compute_threshold(infmax)
-            n, mean, std, maxv, minv = self.compute_score(sample, idx)
+            infs = map(h, sample)
+            if len(infs) <= 1:
+                return True
+
+            infmax = max(infs)
+            thresh = self.compute_threshold(infmax, idx)
+            std = np.std(infs)
+            maxv, minv = max(infs), min(infs)
             return std < thresh and maxv - minv < thresh
 
-        return reduce(and_, map(f, enumerate(samples)))
+        bools = map(f, enumerate(samples))
+        #return np.mean(map(float, bools)) >= 0.95
+        return reduce(and_, bools)
 
 
     def influence(self, row, idx):
        if row[self.SCORE_ID].value == -inf:
             influence = self.err_funcs[idx]((row,))
             row[self.SCORE_ID] = influence
-            self.inf_bounds[0] = min(influence, self.inf_bounds[0])
-            self.inf_bounds[1] = max(influence, self.inf_bounds[1])
+            self.inf_bounds[idx][0] = min(influence, self.inf_bounds[idx][0])
+            self.inf_bounds[idx][1] = max(influence, self.inf_bounds[idx][1])
        return row[self.SCORE_ID].value
 
-    def compute_threshold(self, infmax):
-        infl, infu = tuple(self.inf_bounds)
+    def compute_threshold(self, infmax, idx):
+        infl, infu = tuple(self.inf_bounds[idx])
         tau, p = self.tau, self.p
         s = (tau[0] - tau[1]) / ((1-p)*infu - p * infl)
         w = tau[0] + s*(infmax - infu)
@@ -164,18 +175,22 @@ class BDTTablesPartitioner(Basic):
     def get_score_for_samples(self, samples):
         f = lambda (idx, sample): self.compute_score(sample, idx)
         samples = filter(lambda s: len(s), samples)
-        if len(samples) > 1:
-            stats = map(f, enumerate(samples))
-            scores = []
-            counts = []
-            for n, mean, std, maxinf, mininf in stats:
-                thresh = self.compute_threshold(maxinf)
-                scores.append( ((thresh - self.inf_bounds[0]) / (self.inf_bounds[1]-self.inf_bounds[0])) * (std - thresh) )
-                counts.append(n)
+        stats = []
+        for idx, samp in enumerate(samples):
+            if len(samp):
+                stats.append((idx, f((idx, samp))))
+        if len(stats):
+            counts, scores = [], []
+            for idx, (n, mean, std, maxinf, mininf) in stats:
+                thresh = self.compute_threshold(maxinf, idx)
+                inf_bounds = self.inf_bounds[idx]
+                if inf_bounds[1] == inf_bounds[0]:
+                    scores.append(0)
+                    counts.append(n)
+                else:
+                    scores.append( ((thresh - inf_bounds[0]) / (inf_bounds[1]-inf_bounds[0])) * (std - thresh) )
+                    counts.append(n)
             return np.mean(scores)#wmean(scores, counts)#ret
-                
-            args = stats[0] + stats[1] + (0.05,)
-            return welchs_ttest(*args)
         return -inf
 
 
@@ -196,17 +211,40 @@ class BDTTablesPartitioner(Basic):
 
     def merge_scores(self, scores):
         if scores:
-            return np.mean(scores)
+            return np.mean(scores) + np.std(scores)
         return -inf
 
-    def print_status(self, rule, samples):
+    def print_status(self, rule, datas, samples):
+        def f(args):
+            idx, sample = args
+            if len(sample) < self.min_pts:
+                return True
+            h = lambda row: self.influence(row, idx)
+            infs = map(h, sample)
+            if len(infs) <= 1:
+                return True
+
+            infmax = max(infs)
+            thresh = self.compute_threshold(infmax, idx)
+            std = np.std(infs)
+            maxv, minv = max(infs), min(infs)
+            return std < thresh and maxv - minv < thresh
+
+        bools = map(f, enumerate(samples))
+        perc_passed = np.mean(map(float, bools))
+
+
+
         all_infs = self.estimate_infs(samples)
         maxstd = max(map(np.std, all_infs))
         minmin = min(map(min, all_infs))
         uu = np.mean(map(np.mean, all_infs))
-        maxmax = max(map(max, all_infs))
-        minthresh = self.compute_threshold(maxmax)
-        _logger.debug( '%s\t%4f - %4f\t%.4f\t%.4f : %.4f : %.4f\t%.4f\t%s' , self.should_stop(samples), self.inf_bounds[0], self.inf_bounds[1], maxstd, minmin, uu, maxmax, minthresh, str(rule))
+        maxes = map(max, all_infs)
+        threshes = [self.compute_threshold(v, idx) for idx, v in enumerate(maxes)]
+        npts = sum(map(len, datas)) if datas else 0
+        _logger.debug('%.2f\tnpts(%d)\t%4f - %4f\t%.4f\t%.4f : %.4f : %.4f\t%.4f\t%s' , 
+                      perc_passed, npts, self.inf_bounds[0][0], self.inf_bounds[0][1], 
+                      maxstd, minmin, uu, max(maxes), min(threshes), str(rule))
 
  
     def in_box(self, node):
@@ -273,7 +311,7 @@ class BDTTablesPartitioner(Basic):
         if node.n == 0:
             return node
 
-        self.print_status(rule, samples)
+        self.print_status(rule, datas, samples)
 
         if self.should_stop(samples):
             node.set_score(self.estimate_inf(samples))
@@ -286,17 +324,25 @@ class BDTTablesPartitioner(Basic):
 
         attr_scores = []
         for attr, new_rules in self.child_rules(rule):
+#            if min(max(len(r(d)) for d in datas) for r in new_rules) == 0:
+#                # if it just reduces the granularity but doesn't split the points,
+#                # then just do it
+#                attr_scores = [(attr, new_rules, node.prev_score, node.prev_scores)]
+#                break
+                
             scores = self.get_scores(new_rules, samples)
             if not scores:
                 continue
             score = self.merge_scores(scores)
+                
             # penalize excessive splitting along a single dimension if it is not helping
-            if attr == node.prev_attr:
-                score = score + (0.05) * abs(score)
             if attr.var_type == Orange.feature.Type.Discrete:
-                score = score - (0.05) * abs(score)
-            if attr == node.prev_attr and self.skinny_penalty(new_rules):
-                score = score + (0.6) * abs(score)
+                score = score - (0.15) * abs(score)
+            else:
+                if attr == node.prev_attr:
+                    score = score + (0.05) * abs(score)
+                    if False and self.skinny_penalty(new_rules):
+                        score = score + (0.6) * abs(score)
 
             if score != -inf:
                 attr_scores.append((attr, new_rules, score, scores))
@@ -310,10 +356,10 @@ class BDTTablesPartitioner(Basic):
         
 
 
-        node.score = min(scores)
+        node.score = min(scores) if scores else  -inf
         minscore = self.get_score_for_samples(samples)
         minscore = minscore - abs(minscore) * self.min_improvement
-        if min(scores) >= minscore and minscore != -inf:
+        if node.score >= minscore and minscore != -inf:
             _logger.debug("score didn't improve\t%.7f >= %.7f", min(scores), minscore)
             node.set_score(self.estimate_inf(samples))
             return node
@@ -323,6 +369,8 @@ class BDTTablesPartitioner(Basic):
         for new_rule, new_samp_rates in zip(new_rules, all_new_srs):
             child = Node(new_rule)
             child.prev_attr = attr
+            child.prev_scores = scores
+            child.prev_score = score
             child.parent = node
 
             self.grow(child, datas, new_samp_rates)
@@ -370,7 +418,7 @@ class BDTTablesPartitioner(Basic):
 
     def update_sample_rates_helper(self, datas, samp_rate, idx):
         influences, counts = [], []
-        f = lambda row: self.influence(row, idx) - self.inf_bounds[0]
+        f = lambda row: self.influence(row, idx) - self.inf_bounds[idx][0]
         for data in datas:
             influence = sum(map(f, data))
             influences.append(influence)

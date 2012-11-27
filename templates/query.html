@@ -15,28 +15,27 @@
 {% endraw %}
 
 
-
 <script type="text/javascript">
 var canned_queries = {
 	intel : {queries:[
 	{
 		id : 'sql_intel1',
  		 name: 'Anomalous noon readings',
-		 query : "SELECT avg(temp), stddev(temp),\n    ((extract(epoch from date+time - '2004-3-1'::timestamp)) / (30*60)) :: int as dist\nFROM readings\nWHERE date+time > '2004-3-1'::timestamp and date+time < '2004-3-5'::timestamp\nGROUP BY dist ORDER BY dist",
+         query : "SELECT avg(temp), stddev(temp), date_trunc('hour',date+time) as dt\n FROM readings\n WHERE date+time > '2004-3-1' and date+time < '2004-3-5'\n GROUP BY dt\n ORDER BY dt ASC",
 		 desc: "This graph plots the average and standard deviation of temperature sensors between 3/1/2004 to 3/5/2004.  The anomalous standard deviation values are due to a mote at noon. Data from the Intel Sensor Dataset.",
 		 db: "intel"
 	},
 	{
 		id : 'sql_intel2',
  		 name: 'Initial Sensor Failure',
-		 query : "SELECT avg(temp), stddev(temp),\n    ((extract(epoch from date+time - '2004-3-1'::timestamp)) / (30*60)) :: int as dist\nFROM readings\nWHERE date+time > '2004-3-5'::timestamp and date+time < '2004-3-10'::timestamp\nGROUP BY dist ORDER BY dist",
+         query : "SELECT avg(temp), stddev(temp),date_trunc('hour',date+time) as dt\n FROM readings\n WHERE date+time > '2004-3-5' and date+time < '2004-3-10'\n GROUP BY dt ORDER BY dt",
 		 desc: "This graph plots the average and standard deviation of temperature sensors between 3/5/2004 to 3/10/2004.  The anomalous standard deviation values are due to the first failing sensor mote. Data from the Intel Sensor Dataset.",
 		 db: "intel"
 	},	
 	{
 		id : 'sql_intel3',
 		name: "Multiple Sensor Failures",
-		query : "SELECT avg(temp), stddev(temp),\n    ((extract(epoch from date+time - '2004-3-1'::timestamp)) / (30*60)) :: int as dist\nFROM readings\nWHERE date+time > '2004-3-10'::timestamp and date+time < '2004-3-15'::timestamp\nGROUP BY dist ORDER BY dist",
+		query : "SELECT avg(temp), stddev(temp),date_trunc('hour', date+time) as dt\nFROM readings\nWHERE date+time > '2004-3-10' and date+time < '2004-3-15'\nGROUP BY dt ORDER BY dt",
 		 desc: "This graph plots the average temperature across sensors between 3/10/2004 to 3/15/2004.  The sensor batteries begin dying, and begin generating massive amounts of anomalous readings. Data from the Intel Sensor Dataset.",
 		db: "intel"
 	}]},
@@ -51,14 +50,14 @@ var canned_queries = {
 		{
 			id : 'sql_fec1',
 			name: "2012 Obama Campaign Expenses",
-			query : "SELECT sum(disb_amt),\n            (extract( epoch from disb_dt-'2009-1-2'::timestamp) / (24*60*60)) :: int as day\nFROM expenses\nWHERE cand_id = 'P80003338'\nGROUP BY day ;",
+			query : "SELECT sum(disb_amt), disb_dt as day\nFROM expenses\nWHERE cand_id = 'P80003338'\nGROUP BY day ;",
 			desc: "Total day by day expenses from the Obama 2012 Presidential campaign. Data from the FEC.",
 			db: "fec12"
 		},
 		{
 			id : 'sql_fec2',
 			name: "2012 Total Campaign Expenses",
-			query : "SELECT sum(disb_amt),\n            (extract( epoch from disb_dt-'2009-1-2'::timestamp) / (24*60*60)) :: int as day\nFROM expenses\nGROUP BY day ;",
+			query : "SELECT sum(disb_amt), disb_dt as day\nFROM expenses\nGROUP BY day ;",
 			desc: "Total day by day expenses from 2012 Election. Data from the FEC.",
 			db: "fec12"
 		},
@@ -72,14 +71,14 @@ var canned_queries = {
 		{
 			id : 'sql_fec4',
 			name: "2008 Obama Campaign Expenses",
-			query : "SELECT sum(disb_amt),\n            (extract( epoch from disb_dt-'2007-1-2'::timestamp) / (24*60*60)) :: int as day\nFROM expenses2008\nWHERE cand_id = 'P80003338'\nGROUP BY day ;",
+			query : "SELECT sum(disb_amt), disb_dt as day\nFROM expenses2008\nWHERE cand_id = 'P80003338'\nGROUP BY day ;",
 			desc: "Total day by day expenses from the Obama 2008 Presidential campaign. Data from the FEC.",
 			db: "fec12"
 		},
 		{
 			id : 'sql_fec5',
 			name: "2008 Total Campaign Expenses",
-			query : "SELECT sum(disb_amt),\n            (extract( epoch from disb_dt-'2007-1-2'::timestamp) / (24*60*60)) :: int as day\nFROM expenses2008\nGROUP BY day ;",
+			query : "SELECT sum(disb_amt), disb_dt as day\nFROM expenses2008\nGROUP BY day ;",
 			desc: "Total day by day expenses from 2008 Election. Data from the FEC.",
 			db: "fec12"
 		},

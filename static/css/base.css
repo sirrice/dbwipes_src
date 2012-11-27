@@ -78,6 +78,17 @@ div.xlabel {
 }
 
 .filter-clause {
-	font-size: 14px;
+	font-size: 14pt;
+    line-height: 17pt;
 	color: #505050;
+    clear: both;
+    margin-top: 15px;
+}
+
+.btn-clause {
+    width: 150px;
+}
+
+span.clause-part {
+    display: inline;
 }

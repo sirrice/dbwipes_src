@@ -371,7 +371,7 @@ class SDRule(object) :
 
 
         conds = []
-        for idx in positions:
+        for old_cond, idx in zip(self.filter.conditions, positions):
             attr = data.domain[idx]
             sd = sub_ddists[idx]
             sb = sub_bdists[idx]
@@ -389,9 +389,10 @@ class SDRule(object) :
                         values = [orange.Value(attr, val) for val in svals]
                         )
             else:
-                continue
                 if sb.min == fb.min and sb.max == fb.max:
                     continue
+                conds.append(old_cond)
+                continue
 
                 cond = Orange.data.filter.ValueFilterContinuous(
                         position=idx,

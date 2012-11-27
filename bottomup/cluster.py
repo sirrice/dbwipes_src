@@ -62,12 +62,15 @@ class Cluster(object):
         c.__dict__.update(thedict)
         c.bbox = c.bbox and (tuple(c.bbox[0]), tuple(c.bbox[1])) or ((),())
         c.cols = map(str, c.cols)
+        c.discretes = dict((str(k),set([str(v) if isinstance(v,basestring) else v for v in vs])) for k,vs in c.discretes)
         return c
 
     def to_dict(self):
         d = dict(self.__dict__)
         if 'parents' in d:
             del d['parents']
+        if 'discretes' in d:
+            d['discretes'] = [(k,list(v)) for k,v in self.discretes.iteritems()]
         return d
 
 
@@ -221,9 +224,15 @@ class Cluster(object):
         if len([d for d,md in zip(diffs, mydiffs) if d < -md*0.01]):
             return False
 
-        if len(mydiffs) == 0:
+        # no continuous dimensions
+        if len(mydiffs) == 0:  
             return True
 
+        overlaps = [(d, md, od) for d, md, od in zip(diffs, mydiffs, odiffs) if d >= 0]
+        sufficient_overlaps = [d for d,md,od in overlaps if (md == 0 or d/md > thresh)]
+        if len(overlaps) >= len(self.cols)-1 and len(sufficient_overlaps):
+            return True
+        return False
         overlapping = [d for d, md, od in zip(diffs, mydiffs, odiffs) if d >= 0 and (md == 0 or d/md > thresh)]
         if len(overlapping) > 0:
             return True
@@ -277,6 +286,20 @@ class Cluster(object):
                 return False
         return True
 
+    def discretes_distance(self, o):
+        myd = self.discretes
+        od = o.discretes
+        keys = set(myd.keys()).union(set(od.keys()))
+        
+        diff = 0
+        for key in keys:
+            mvals = myd.get(key, set())
+            ovals = od.get(key, set())
+            diff += len(mvals) + len(ovals) - len(mvals.intersection(ovals))
+        return diff
+
+
+
     def to_rule(self, table, cols, cont_dists=None, disc_dists=None):
         """
         @param cols list of attribute names
@@ -306,7 +329,7 @@ class Cluster(object):
         for disc_name, vidxs in self.discretes.iteritems():
             attr = domain[disc_name]
             disc_pos = domain.index(attr)
-            vals = [orange.Value(attr, attr.values[int(vidx)]) for vidx in vidxs]
+            vals = [orange.Value(attr, attr.values[int(vidx)]) for vidx in vidxs if int(vidx) < len(attr.values)]
 
             if not vals or len(vals) == len(disc_dists[attr.name]):
                 continue
@@ -349,6 +372,10 @@ class Cluster(object):
     ancestors = property(__ancestors__)
     
     def __str__(self):
+        s = '\t'.join(['%s:(%.4f, %.4f)' % (col, bound[0], bound[1]) 
+                   for col, bound in zip(self.cols, zip(*self.bbox))])
+        d = '\t'.join(["%s:%s" % (k, str(list(v))) for k,v in self.discretes.iteritems()])
+        return '%.4f\t%s\t%s' % (self.error, s, d)
         fmt = '\t'.join(['%.4f'] * len(self.bbox[0]))
         args = (self.error, fmt % self.bbox[0], fmt % self.bbox[1], str(self.discretes))
         return '%.6f\t%s\t%s\t%s' % args
@@ -377,6 +404,7 @@ def compute_clusters_threshold(clusters, nstds=1.):
     #npts = [1] * len(clusters)
     mean, std = wmean(errors, npts), wstd(errors, npts)        
     thresh = max(0, min(max(errors), mean + nstds * std))
+    thresh = min(max(errors), mean + nstds * std)
     return thresh
 
 

@@ -31,6 +31,7 @@ class Basic(object):
         self.merger = None
         self.params = {}
         self.costs = {}
+        self.stats = {}  # used by @instrument
 
         self.bad_thresh = 0
         self.good_thresh = 0
@@ -41,13 +42,15 @@ class Basic(object):
 
         self.l = kwargs.get('l', 0.5)
         self.c = kwargs.get('c', 1.)
+        self.epsilon = kwargs.get('epsilon', 0.0001)
+        self.tau = kwargs.get('tau', [0.1, 0.5])
+        self.p = kwargs.get('p', 0.5)
         self.bincremental = kwargs.get('bincremental', True)
         self.use_cache = kwargs.get('use_cache', False)
 
         self.tablename = kwargs.get('tablename', None)
 
 
-        self.cache = bsddb3.hashopen('./dbwipes.cache')
         
 
         self.scorer_cost = 0.

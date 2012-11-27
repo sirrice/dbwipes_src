@@ -22,7 +22,8 @@ _logger = get_logger()
 
 
 class AdjacencyGraph(object):
-    def __init__(self, clusters):
+    def __init__(self, clusters, partitions_complete=True):
+        self.partitions_complete = partitions_complete
         self.graph = defaultdict(set)
         self.cid = 0
         self.clusters = []
@@ -159,8 +160,12 @@ class AdjacencyGraph(object):
         if cluster not in self.graph:
             return
 
-        for neigh in self.graph[cluster]:
-            self.graph[neigh].remove(cluster)
+        try:
+            for neigh in self.graph[cluster]:
+                if not neigh == cluster:
+                    self.graph[neigh].remove(cluster)
+        except:
+            pdb.set_trace()
         del self.graph[cluster]
 
         cid = self.c2id[cluster]
@@ -170,6 +175,9 @@ class AdjacencyGraph(object):
         self.clusters[cid] = None
 
     def neighbors(self, cluster):
+        if not self.partitions_complete:
+            return filter(bool, self.clusters)
+
         if cluster in self.graph:
             return self.graph[cluster]
 

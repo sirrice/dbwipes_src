@@ -191,7 +191,7 @@ def nextexpid(db):
 def init_db(db):
     try:
         with db.begin() as conn:
-            conn.execute("""create table stats (
+            conn.execute("""create table stats_cache (
         expid int,
         id serial,
         tstamp timestamp default current_timestamp,
@@ -216,7 +216,7 @@ def init_db(db):
         notes text null,
         boundtype text null
                 )""")
-            conn.execute("""create table costs (
+            conn.execute("""create table costs_cache (
             id serial,
             sid int,
             name varchar(128),

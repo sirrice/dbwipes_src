@@ -1,3 +1,4 @@
+import bsddb3
 import json
 import time
 import pdb
@@ -44,12 +45,18 @@ class BDT(Basic):
         self.cost_split = 0.
         self.cost_partition_bad = 0.
         self.cost_partition_good = 0.
+        self.cache = None
+        self.use_mtuples = kwargs.get('use_mtuples', False)
+
 
     def __hash__(self):
         components = [
                 self.__class__.__name__,
                 str(self.aggerr.__class__.__name__),
                 str(set(self.cols)),
+                self.epsilon,
+                self.tau,
+                self.p,
                 self.err_func.__class__.__name__,
                 self.tablename
                 ]
@@ -114,11 +121,17 @@ class BDT(Basic):
         clusters.sort(key=lambda c: c.error, reverse=True)
         thresh = compute_clusters_threshold(clusters, nstds=1.5)
         is_mergable = lambda c: c.error >= thresh
+        if [attr for attr in self.full_table.domain if attr.varType == orange.VarTypes.Discrete]:
+            use_mtuples = self.use_mtuples
+            use_mtuples = False
+        else:
+            use_mtuples = self.use_mtuples
         params = dict(self.params)
         params.update({'cols' : self.cols,
                       'err_func' : self.err_func,
                       'influence' : lambda c: self.influence_cluster(c),
                       'is_mergable' : is_mergable,
+                      'use_mtuples' : use_mtuples,
                       'learner' : self})
         self.merger = Merger(**params)
         merged_clusters = self.merger(clusters)
@@ -233,13 +246,41 @@ class BDT(Basic):
         ret.extend(low_influence)
         return ret
 
-    def get_partitions(self, full_table, bad_tables, good_tables, **kwargs):
-        myhash = str(hash(self))
-        if myhash in self.cache and self.use_cache:
-            dicts = json.loads(self.cache[myhash])
-            clusters = map(Cluster.from_dict, dicts)
-            return clusters
+    @instrument
+    def load_from_cache(self):
+        self.cache = bsddb3.hashopen('./dbwipes.cache')
+        try:
+            myhash = str(hash(self))
+            if myhash in self.cache and self.use_cache:
+                dicts = json.loads(self.cache[myhash])
+                clusters = map(Cluster.from_dict, dicts)
+                return clusters
+        except:
+            pass
+        finally:
+            self.cache.close()
+        return None
 
+    @instrument
+    def cache_results(self, clusters):
+        # save the clusters in a dictionary
+        if self.use_cache:
+            myhash = str(hash(self))
+            self.cache = bsddb3.hashopen('./dbwipes.cache')
+            try:
+                dicts = [c.to_dict() for c in clusters]
+                self.cache[myhash] = json.dumps(dicts)
+            except:
+                pass
+            finally:
+                self.cache.close()
+
+
+
+    def get_partitions(self, full_table, bad_tables, good_tables, **kwargs):
+        clusters = self.load_from_cache()
+        if clusters:
+            return clusters
 
         params = dict(self.params)
         params.update(kwargs)
@@ -280,11 +321,7 @@ class BDT(Basic):
         _logger.debug('done in %d', time.time()-start)
         self.cost_split = time.time() - start
 
-        # save the clusters in a dictionary
-        if self.use_cache:
-            dicts = [dict(c.__dict__) for c in clusters]
-            self.cache[myhash] = json.dumps(dicts)
-
+        self.cache_results(clusters)
 
         return clusters
 

@@ -59,8 +59,12 @@ function filter_click(clauseid, query, where, data, labels) {
 {% for label, clauses in filter_opts %}
 	{% if clauses|length > 0 %}
 		<h2>{{label}}</h2>
-		{% for clause, cquery, cwhere, cdata, idx in clauses %}
-			<div class="filter-clause" id="clause_{{idx}}">{{clause}}</div>
+		{% for clause_parts, cquery, cwhere, cdata, idx in clauses %}
+            <ul class="filter-clause" id="clause_{{idx}}">
+            {% for clause in clause_parts %}
+                <li class='clause-part'>{{clause}}</li>
+            {% endfor %}
+            </ul>
 			<div id="clause_filter_{{idx}}"><pre class="btn btn-clause">Filter</pre></div>
 			<script type="text/javascript">
 			(function(){

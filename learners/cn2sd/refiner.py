@@ -70,6 +70,7 @@ class BeamRefiner(object):
             
 
             fanout = len(keys) / 5 if len(keys) / self.fanout > 5 else self.fanout
+            fanout = self.fanout
             #fanout = 60
             fanout = min(fanout, len(keys))#fanout)
             #fanout = len(keys)

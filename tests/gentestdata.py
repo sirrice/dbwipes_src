@@ -28,7 +28,7 @@ class DatasetNames(object):
 
     def __getitem__(self, key):
         try:
-            self.datasetnames[int(key)]
+            return self.datasetnames[int(key)]
         except:
             return key
 datasetnames = DatasetNames()
@@ -102,7 +102,7 @@ def get_intel_corr():
 def get_intel_mote18():
     sql = """SELECT stddev(temp),
     ((extract(epoch from date+time - '2004-3-1'::timestamp)) / (30*60)) :: int as dist
-    FROM cleanreadings
+    FROM readings
     WHERE date+time > '2004-3-8'::timestamp and date+time < '2004-3-15'::timestamp
     GROUP BY dist ORDER BY dist"""
     badresults = [378, 379, 387, 388, 397, 396, 406, 405, 414, 415, 423,

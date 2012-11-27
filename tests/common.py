@@ -95,7 +95,7 @@ def get_parameters(datasetidx, **kwargs):
     obj.db.close()
 
     (bad_tables, good_tables), full_table = reconcile_tables(bad_tables, good_tables)
-    _, full_table = reconcile_tables(bad_tables)
+    #_, full_table = reconcile_tables(bad_tables)
 
     # strip unnecessary columns
     user_cols = kwargs.get('cols', None)
@@ -131,9 +131,10 @@ def get_rules(full_table, bad_tables, good_tables, **kwargs):
     thresh = compute_clusters_threshold(clusters)
     for c in clusters:
         c.isbest = (c.error >= thresh)
-    merged = list(clusters_to_rules(clusters, cols, full_table))
+    merged = sorted(clusters_to_rules(clusters, cols, full_table), key=lambda c: c.quality, reverse=True)
     #merged = [r.simplify() for r in merged]
 
+    cost = cost - costs.get('merge_load_from_cache',(0,))[0] - costs.get('merge_cache_results', (0,))[0]
     costs['cost_total'] = cost
     return costs, merged, learner
 
@@ -157,6 +158,10 @@ def run_experiment(datasetidx, **kwargs):
 
     costs, rules, learner = get_rules(ft, bts, gts, **params)
     ids = [get_row_ids(rule, ft) for rule in rules]
+
+    learner.__dict__['compute_stats'] = lambda r: compute_stats(r, truth, len(ft))
+
+
     return costs, rules, ids, len(ft), learner
 
 
