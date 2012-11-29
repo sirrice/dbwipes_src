@@ -213,35 +213,24 @@ class Cluster(object):
         if not d_intersects:
             return False
 
+        # needs to "sufficiently" intersect on N-1 dimensions and
+        # at least touch on one dimension
+        N = len(self.bbox[0])
+        n_intersect = 0
+        n_close = 0
+        dists = []
+        for myb, ob in  zip(zip(*self.bbox), zip(*o.bbox)):
+            _min, _max = max(myb[0], ob[0]), min(myb[1], ob[1])
+            myrange = myb[1] - myb[0]
+            dist = _max - _min
+            dists.append(dist)
+            if dist > myrange * 0.1:
+                n_intersect += 1
+            elif dist > -myrange * 0.01:
+                n_close += 1
 
-        d_same = self.discretes_same(o)
-        intersection = intersection_box(self.bbox, o.bbox)
-        make_diff = lambda bbox: map(lambda p:p[1]-p[0], zip(*bbox))
-        diffs = make_diff(intersection) 
-        mydiffs = make_diff(self.bbox)
-        odiffs = make_diff(o.bbox)
+        return n_intersect + n_close == N and n_close <= 1
 
-        if len([d for d,md in zip(diffs, mydiffs) if d < -md*0.01]):
-            return False
-
-        # no continuous dimensions
-        if len(mydiffs) == 0:  
-            return True
-
-        overlaps = [(d, md, od) for d, md, od in zip(diffs, mydiffs, odiffs) if d >= 0]
-        sufficient_overlaps = [d for d,md,od in overlaps if (md == 0 or d/md > thresh)]
-        if len(overlaps) >= len(self.cols)-1 and len(sufficient_overlaps):
-            return True
-        return False
-        overlapping = [d for d, md, od in zip(diffs, mydiffs, odiffs) if d >= 0 and (md == 0 or d/md > thresh)]
-        if len(overlapping) > 0:
-            return True
-        return False
-
-
-        if False and d_same:
-            return len(filter(lambda d: d < 0, diffs)) > 0
-        return volume(intersection) >= 0.7 * min(self.volume, o.volume)
 
     def contains(self, o, epsilon=0.):
         if not box_contained(o.bbox, self.bbox, epsilon=epsilon):
@@ -273,6 +262,16 @@ class Cluster(object):
             return False
         for key in mykeys:
             if set(self.discretes[key]) != set(o.discretes[key]):
+                return False
+        return True
+
+    def discretes_overlap(self, o):
+        myd = self.discretes
+        od = o.discretes
+        keys = set(myd.keys()).intersection(set(od.keys()))
+        
+        for key in keys:
+            if len(od[key].intersection(myd[key])) == 0:
                 return False
         return True
 

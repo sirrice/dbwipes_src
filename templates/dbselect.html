@@ -4,11 +4,11 @@
 	<label class="control-label" for="dbname">Choose a Database</label>
 	<div class="controls">
 		<select id="dbselect" class="input-xlarge" name="db">
-			<option value="intel" {% if g.dbname == 'intel' %}selected="selected"{% endif %}>
-				Intel Sensor Dataset
-			</option>
 			<option value="fec12"  {% if g.dbname == 'fec12' %}selected="selected"{% endif %}>
 				FEC Presidential Campaign Dataset
+			</option>
+			<option value="intel" {% if g.dbname == 'intel' %}selected="selected"{% endif %}>
+				Intel Sensor Dataset
 			</option>
 			<!--<option value="mattdata"  {% if g.dbname == 'mattdata' %}selected="selected"{% endif %}>
 				PartNews Dataset

@@ -124,9 +124,9 @@ def serial_hybrid(obj, aggerr, **kwargs):
                 'use_mtuples': False,#True,
                 'epsilon': 0.005,
                 'min_improvement': 0.01,
-                'tau': [0.05, 0.3],
-                'c' : 0.6,
-                'p': 0.5
+                'tau': [0.1, 0.5],
+                'c' : 0.3,
+                'p': 0.7
                 })
 
         start = time.time()
@@ -137,7 +137,15 @@ def serial_hybrid(obj, aggerr, **kwargs):
         clusters.sort(key=lambda c: c.error, reverse=True)
         rules = clusters_to_rules(clusters, cols, full_table)
         #rules = [r.simplify(all_full_table) for r in rules]
-        
+        rules = [r for r in rules if str(r).strip() != '']
+        dups = set()
+        newrules = []
+        for r in rules:
+            if str(r) in dups:
+                continue
+            dups.add(str(r))
+            newrules.append(r)
+        rules = newrules
 
 
         cost = time.time() - start

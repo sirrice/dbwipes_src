@@ -123,7 +123,7 @@ class BDT(Basic):
         is_mergable = lambda c: c.error >= thresh
         if [attr for attr in self.full_table.domain if attr.varType == orange.VarTypes.Discrete]:
             use_mtuples = self.use_mtuples
-            use_mtuples = False
+            #use_mtuples = False
         else:
             use_mtuples = self.use_mtuples
         params = dict(self.params)

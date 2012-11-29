@@ -185,6 +185,7 @@ class MR(Basic):
                 'cost_merge' : self.cost_merge
         }
 
+
         return self.final_clusters
 
 

@@ -12,6 +12,7 @@ class DatasetNames(object):
                 'intel_mote18',
                 'intel_first_spike',
                 'intel_mass_failures',
+                'intel_low_voltage',
                 'harddata1_avg',
                 'harddata1_std',
                 'harddata1_sum',
@@ -167,7 +168,30 @@ def get_intel_mass_failures():
                   969, 970, 971, 972, 974, 973, 975, 976, 977, 978, 979]
     goodresults = [684, 685, 686, 687, 688, 693, 689, 690, 691, 692,
                    694, 695, 698, 696, 697, 701, 702, 699, 700, 703, 704]
-    
+
+
+    sql = """SELECT stddev(temp), date_trunc('hour', date+time) as dt
+    FROM readings
+    WHERE date + time > '2004-3-8' and date + time < '2004-3-15'
+    GROUP BY dt ORDER BY dt"""
+
+    badresults =  [datetime(2004, 3, 9, 6, 0), datetime(2004, 3, 9, 5, 0), datetime(2004, 3, 9, 7, 0), datetime(2004, 3, 9, 8, 0), datetime(2004, 3, 9, 9, 0), datetime(2004, 3, 9, 10, 0), datetime(2004, 3, 9, 11, 0), datetime(2004, 3, 9, 12, 0), datetime(2004, 3, 9, 13, 0), datetime(2004, 3, 9, 14, 0), datetime(2004, 3, 9, 15, 0), datetime(2004, 3, 9, 16, 0), datetime(2004, 3, 9, 17, 0), datetime(2004, 3, 9, 18, 0), datetime(2004, 3, 9, 19, 0), datetime(2004, 3, 9, 21, 0), datetime(2004, 3, 9, 20, 0), datetime(2004, 3, 9, 22, 0), datetime(2004, 3, 9, 23, 0), datetime(2004, 3, 10, 0, 0), datetime(2004, 3, 10, 1, 0), datetime(2004, 3, 10, 2, 0), datetime(2004, 3, 10, 3, 0), datetime(2004, 3, 11, 13, 0), datetime(2004, 3, 11, 14, 0), datetime(2004, 3, 11, 15, 0), datetime(2004, 3, 11, 16, 0), datetime(2004, 3, 11, 17, 0), datetime(2004, 3, 11, 18, 0), datetime(2004, 3, 11, 19, 0), datetime(2004, 3, 11, 20, 0), datetime(2004, 3, 11, 22, 0), datetime(2004, 3, 11, 21, 0), datetime(2004, 3, 11, 23, 0), datetime(2004, 3, 12, 0, 0), datetime(2004, 3, 12, 2, 0), datetime(2004, 3, 12, 1, 0), datetime(2004, 3, 12, 3, 0), datetime(2004, 3, 12, 4, 0), datetime(2004, 3, 12, 6, 0), datetime(2004, 3, 12, 5, 0), datetime(2004, 3, 12, 7, 0), datetime(2004, 3, 12, 8, 0), datetime(2004, 3, 12, 9, 0), datetime(2004, 3, 12, 11, 0), datetime(2004, 3, 12, 10, 0)]
+   
+    goodresults = []
+    def get_ground_truth(table):
+        return [row['id'].value for row in table if row['temp'].value > 50] #< 2.4]
+    return sql, badresults, goodresults, get_ground_truth
+
+def get_intel_low_voltage():
+    sql = """SELECT avg(temp), stddev(temp), date_trunc('hour',(date) + (time)) as dt
+    FROM readings
+    WHERE (((date) + (time)) > '2004-3-10') and (((date) + (time)) < '2004-3-25')
+    GROUP BY dt
+    ORDER BY dt ASC"""
+    badresults = map(parse, [u'2004-03-23T03:00:00.000Z', u'2004-03-23T04:00:00.000Z', u'2004-03-23T05:00:00.000Z', u'2004-03-23T06:00:00.000Z', u'2004-03-23T07:00:00.000Z', u'2004-03-23T08:00:00.000Z', u'2004-03-23T09:00:00.000Z', u'2004-03-23T10:00:00.000Z', u'2004-03-23T11:00:00.000Z', u'2004-03-23T12:00:00.000Z', u'2004-03-23T13:00:00.000Z', u'2004-03-23T14:00:00.000Z', u'2004-03-23T15:00:00.000Z', u'2004-03-23T16:00:00.000Z', u'2004-03-23T17:00:00.000Z', u'2004-03-23T18:00:00.000Z', u'2004-03-23T19:00:00.000Z', u'2004-03-23T20:00:00.000Z', u'2004-03-23T21:00:00.000Z', u'2004-03-23T22:00:00.000Z', u'2004-03-23T23:00:00.000Z', u'2004-03-24T00:00:00.000Z', u'2004-03-24T01:00:00.000Z', u'2004-03-24T02:00:00.000Z', u'2004-03-24T03:00:00.000Z', u'2004-03-24T04:00:00.000Z', u'2004-03-24T05:00:00.000Z', u'2004-03-24T06:00:00.000Z', u'2004-03-24T07:00:00.000Z', u'2004-03-24T08:00:00.000Z', u'2004-03-24T09:00:00.000Z', u'2004-03-24T10:00:00.000Z'])
+
+    good_results = map(parse, [u'2004-03-14T21:00:00.000Z', u'2004-03-14T22:00:00.000Z', u'2004-03-14T23:00:00.000Z', u'2004-03-15T00:00:00.000Z', u'2004-03-15T01:00:00.000Z', u'2004-03-15T02:00:00.000Z', u'2004-03-15T03:00:00.000Z', u'2004-03-15T04:00:00.000Z', u'2004-03-15T05:00:00.000Z', u'2004-03-15T06:00:00.000Z', u'2004-03-15T07:00:00.000Z', u'2004-03-15T08:00:00.000Z', u'2004-03-15T09:00:00.000Z', u'2004-03-15T10:00:00.000Z', u'2004-03-15T11:00:00.000Z', u'2004-03-15T12:00:00.000Z', u'2004-03-15T13:00:00.000Z', u'2004-03-15T14:00:00.000Z', u'2004-03-15T15:00:00.000Z', u'2004-03-15T16:00:00.000Z'])
+
     def get_ground_truth(table):
         return [row['id'].value for row in table if row['temp'].value > 50] #< 2.4]
     return sql, badresults, goodresults, get_ground_truth

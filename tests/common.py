@@ -69,7 +69,7 @@ def kname(klass):
 def strip_columns(table, aggerr, cols=None):
     cols = cols or [attr.name for attr in table.domain]
     cols = [col for col in cols 
-            if (col not in ['id', 'err', 'epochid', 'date'] and 
+            if (col not in ['id', 'err', 'epochid', 'date', 'light'] and 
                 col not in aggerr.agg.cols)]
     all_cols = cols + aggerr.agg.cols
     torm = [attr.name for attr in table.domain if attr.name not in all_cols]

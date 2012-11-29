@@ -271,14 +271,15 @@ def create_filter_options(obj):
     filter_opts = defaultdict(list)
     idx = 0
     for label, clauses in obj.clauses.items():
+        rules = [p[0] for p in obj.rules[label]]
         clauses = filter(lambda e:e.strip(), rm_dups(clauses, hash))
-        for clause in clauses[:6]:
+        for rule, clause in zip(rules[:6], clauses[:6]):
             # print "\t", clause
 
             tmpq = obj.clone()
             cwhere = 'not (%s)' % clause 
             tmpq.add_where( cwhere )
-            clause_parts = [c.strip() for c in clause.split(' and ')]
+            clause_parts = [c.strip() for c in str(rule).split(' and ')]
 
             filter_opts[label].append( (clause_parts, tmpq.sql, cwhere, json.dumps({}), idx) )
             idx += 1

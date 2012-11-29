@@ -92,3 +92,8 @@ div.xlabel {
 span.clause-part {
     display: inline;
 }
+
+
+#walkthrough-popover .control-label, #walkthrough-popover .controls span, #walkthrough-popover label {
+    font-size: 15pt;
+}

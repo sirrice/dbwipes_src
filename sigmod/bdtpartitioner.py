@@ -144,7 +144,10 @@ class BDTTablesPartitioner(Basic):
         s = (tau[0] - tau[1]) / ((1-p)*infu - p * infl)
         w = tau[0] + s*(infmax - infu)
         w = min(tau[1], w)
-        return w * (infu - infl)       
+        ret = w * (infu - infl)       
+        if ret == -inf:
+            raise RuntimeError()
+        return ret
 
 
     def estimate_infs(self, samples):
@@ -158,8 +161,9 @@ class BDTTablesPartitioner(Basic):
 
     def get_scores(self, rules, samples):
         scores = []
-        f = lambda sample: self.get_score_for_rules(rules, sample)
-        scores = map(f, samples)
+        for idx, sample in enumerate(samples):
+            score = self.get_score_for_rules(rules, sample, idx)
+            scores.append(score)
         scores = filter(lambda s: s!=-inf, scores)
         return scores
 
@@ -168,21 +172,23 @@ class BDTTablesPartitioner(Basic):
         score = scores and self.merge_scores(scores) or -inf
         return score
 
-    def get_score_for_rules(self, rules, sample):
+    def get_score_for_rules(self, rules, sample, idx):
         new_samples = map(lambda r: r.filter_table(sample), rules)
-        return self.get_score_for_samples(new_samples)
+        return self.get_score_for_samples(new_samples, [idx]*len(new_samples))
 
-    def get_score_for_samples(self, samples):
-        f = lambda (idx, sample): self.compute_score(sample, idx)
-        samples = filter(lambda s: len(s), samples)
+    def get_score_for_samples(self, samples, idxs):
         stats = []
-        for idx, samp in enumerate(samples):
+        for idx, samp in zip(idxs, samples):
             if len(samp):
-                stats.append((idx, f((idx, samp))))
+                stats.append((idx, self.compute_score(samp, idx)))
         if len(stats):
             counts, scores = [], []
             for idx, (n, mean, std, maxinf, mininf) in stats:
-                thresh = self.compute_threshold(maxinf, idx)
+                try:
+                    thresh = self.compute_threshold(maxinf, idx)
+                except:
+                    pdb.set_trace()
+                    self.compute_score(samples[2], 2)
                 inf_bounds = self.inf_bounds[idx]
                 if inf_bounds[1] == inf_bounds[0]:
                     scores.append(0)
@@ -199,7 +205,7 @@ class BDTTablesPartitioner(Basic):
     def compute_score(self, data, idx):
         f = lambda row: self.influence(row, idx)
         try:
-            infs = map(f, data)
+            infs = [self.influence(r,idx) for r in data]
             if not(sum(infs)):
                 return len(infs), 0, 0, 0, 0
             return len(infs), wmean(infs, infs), np.std(infs), max(infs), min(infs)
@@ -264,8 +270,10 @@ class BDTTablesPartitioner(Basic):
         #tables = map(node.rule,self.tables)
 
         # find tuples in each table that is closest to the average influence
-        f = lambda (idx, tables): map(lambda row: self.influence(row, idx), tables)
-        all_infs = map(f, enumerate(tables))
+        all_infs = []
+        for idx, table in enumerate(tables):
+            infs = [self.influence(row, idx) for row in table]
+            all_infs.append(infs)
         states = []
 
         for idx, t, infs in zip(xrange(len(tables)), tables, all_infs):
@@ -311,15 +319,15 @@ class BDTTablesPartitioner(Basic):
         if node.n == 0:
             return node
 
-        self.print_status(rule, datas, samples)
-
-        if self.should_stop(samples):
-            node.set_score(self.estimate_inf(samples))
-            node.states = self.get_states(datas)
-            if not node.states:
-                pdb.set_trace()
-                self.get_states(data)
-            return node
+        if node.parent:
+            self.print_status(rule, datas, samples)
+            if self.should_stop(samples):
+                node.set_score(self.estimate_inf(samples))
+                node.states = self.get_states(datas)
+                if not node.states:
+                    pdb.set_trace()
+                    self.get_states(data)
+                return node
 
 
         attr_scores = []
@@ -338,11 +346,11 @@ class BDTTablesPartitioner(Basic):
             # penalize excessive splitting along a single dimension if it is not helping
             if attr.var_type == Orange.feature.Type.Discrete:
                 score = score - (0.15) * abs(score)
-            else:
-                if attr == node.prev_attr:
-                    score = score + (0.05) * abs(score)
-                    if False and self.skinny_penalty(new_rules):
-                        score = score + (0.6) * abs(score)
+#            else:
+#                if attr == node.prev_attr:
+#                    score = score + (0.05) * abs(score)
+#                    if False and self.skinny_penalty(new_rules):
+#                        score = score + (0.6) * abs(score)
 
             if score != -inf:
                 attr_scores.append((attr, new_rules, score, scores))
@@ -357,7 +365,7 @@ class BDTTablesPartitioner(Basic):
 
 
         node.score = min(scores) if scores else  -inf
-        minscore = self.get_score_for_samples(samples)
+        minscore = self.get_score_for_samples(samples, range(len(samples)))
         minscore = minscore - abs(minscore) * self.min_improvement
         if node.score >= minscore and minscore != -inf:
             _logger.debug("score didn't improve\t%.7f >= %.7f", min(scores), minscore)
@@ -418,9 +426,10 @@ class BDTTablesPartitioner(Basic):
 
     def update_sample_rates_helper(self, datas, samp_rate, idx):
         influences, counts = [], []
-        f = lambda row: self.influence(row, idx) - self.inf_bounds[idx][0]
+        f = lambda row: self.influence(row, idx)
         for data in datas:
-            influence = sum(map(f, data))
+            influence = map(f, data)
+            influence = sum(i - self.inf_bounds[idx][0] for i in influence)
             influences.append(influence)
             counts.append(len(data)+1.)
 
@@ -434,7 +443,7 @@ class BDTTablesPartitioner(Basic):
             infr = influence / total_inf
             sub_samples = infr * nsamples
             nsr = sub_samples / count
-            nsr = min(1., nsr)
+            nsr = max(0, min(1., nsr))
             samp_rates.append(nsr)
 
         return samp_rates

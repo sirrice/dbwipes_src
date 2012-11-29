@@ -104,7 +104,7 @@ if __name__ == '__main__':
         pp = PdfPages('figs/topdown_all_%s.pdf' % str(dataset))
         for c in cs:
             run(pp, dataset, bounds,
-                  klass=MR, 
+                  klass=BDT, 
                   nbadresults = nbadresults,
                   epsilon=0.0005,
                   tau=[0.1, 0.5],
@@ -115,7 +115,7 @@ if __name__ == '__main__':
                   granularity=15,
                   max_wait=5*60,#None,
                   naive=False,
-                  use_mtuples=True,
+                  use_mtuples=False,
                   tablename=dataset, 
                   use_cache=True,
                   cs=cs,

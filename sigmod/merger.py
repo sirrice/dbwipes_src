@@ -184,8 +184,9 @@ class Merger(object):
                     # XXX: states is m-tuple of avg()
                     # XXX
                     inf = ef.recover(ef.remove(mstate, state)) 
-                    inf = inf / (state[-1]**c)  
-                    infs.append(inf)
+                    if state[-1]**c:
+                        inf = inf / (state[-1]**c)  
+                        infs.append(inf)
             return infs
 
         bad_efs = self.learner.bad_err_funcs
@@ -207,12 +208,14 @@ class Merger(object):
         newbbox = bounding_box(cluster.bbox, neighbor.bbox)
         cidxs = self.get_intersection(newbbox)
         intersecting_clusters = [clusters[cidx] for cidx in cidxs]
+        intersecting_clusters = filter(cluster.discretes_overlap, intersecting_clusters)
 
         merged = Cluster.merge(cluster, neighbor, intersecting_clusters, self.point_volume)
         if not merged or not merged.volume:
             return None
         
-        if self.use_mtuples:
+        if self.use_mtuples and cluster.discretes_same(neighbor):
+            intersecting_clusters = filter(cluster.discretes_same, intersecting_clusters)
             merged.error = self.influence_from_mtuples(merged, intersecting_clusters)
         else:
             merged.error = self.influence(merged)

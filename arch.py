@@ -366,13 +366,14 @@ def create_clauses(sharedobj):
         clauses = map(lambda rule:
                      ' or '.join(rule_to_clauses(rule)),
                      rules)
-        #_logger.debug("#clauses pre  dedup %d", len(clauses))
-        clauses = rm_dups(clauses, key=hash)
-        #_logger.debug( "#clauses post dedup %d", len(clauses))
-        clauses = filter(filter_clause, clauses)
-        #_logger.debug( "#clauses post filter %d", len(clauses))
-        #clauses = clauses[:6]
         
+        ##_logger.debug("#clauses pre  dedup %d", len(clauses))
+        #clauses = rm_dups(clauses, key=hash)
+        ##_logger.debug( "#clauses post dedup %d", len(clauses))
+        #clauses = filter(filter_clause, clauses)
+        ##_logger.debug( "#clauses post filter %d", len(clauses))
+        ##clauses = clauses[:6]
+        #
         sharedobj.clauses[label] = clauses
 
 def score_rule(rule, data):
@@ -445,7 +446,7 @@ def create_orange_table(rows, attrs, errids, rm_id_col=True):
         bdiscrete = is_discrete(col)
         if attr in ['epochid', 'voltage', 'xloc', 'yloc', 'est', 'height', 'width', 'atime', 'v', 'light', 'humidity']:
             bdiscrete = False
-        if attr in ['recipient_zip', 'moteid']:
+        if attr in ['recipient_zip', 'moteid', 'file_num']:
             bdiscrete = True
 
         if bdiscrete:
