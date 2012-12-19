@@ -99,12 +99,12 @@ if __name__ == '__main__':
     #bounds = [[52.73538209702353, 77.73538209702353], [44.3706389043392, 69.3706389043392]]
     bounds = [[24.73254341295866, 95.44322153161342], [22.19997047910137, 92.91064859775612], [12.31825640510083, 83.02893452375558], [7.583496039802494, 78.29417415845725]]
     cs = reversed([0., 0.05, 0.075, 0.09, 0.1, 0.12, 0.15, 0.2, 0.3, 0.5, 0.75, 1.])
-    cs = [1., .8, 0.75, 0.5, 0.25, 0.1, 0.]
+    cs = [0.5, 0.25, 0.1, 0.]
     for dataset in idxs:
         pp = PdfPages('figs/topdown_all_%s.pdf' % str(dataset))
         for c in cs:
             run(pp, dataset, bounds,
-                  klass=BDT, 
+                  klass=MR, 
                   nbadresults = nbadresults,
                   epsilon=0.0005,
                   tau=[0.1, 0.5],
@@ -117,7 +117,7 @@ if __name__ == '__main__':
                   naive=False,
                   use_mtuples=False,
                   tablename=dataset, 
-                  use_cache=True,
+                  use_cache=False,
                   cs=cs,
                   c=c)
 

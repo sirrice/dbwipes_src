@@ -194,12 +194,12 @@ def save_result(db, total_cost, costs, stats, rule, ids, dataset, notes, kwargs)
 
 
     with db.begin() as conn:
-        q = """insert into stats_cache(expid, dataset, notes, klass, cols, epsilon, c,     
+        q = """insert into stats(expid, dataset, notes, klass, cols, epsilon, c,     
                                  lambda, boundtype, cost, acc, prec, recall, f1, score, 
                                  isbest, rule, ids) values(%s) returning id""" % (','.join(['%s']*len(stat)))
         sid = conn.execute(q, *stat).fetchone()[0]
 
-        q = """insert into costs_cache(sid, name, cost) values(%s,%s,%s)"""
+        q = """insert into costs(sid, name, cost) values(%s,%s,%s)"""
         for name, cost in costs.items():
             if isinstance(cost, list):
                 cost = cost[0]
@@ -309,8 +309,8 @@ def run_tests(sigmoddb, statsdb, **params):
      min_improvement: 0.01
     """
 
-    for ndim in [4]:# [2,3,4]:
-        for uo in [30]:#[30, 80]:
+    for ndim in [2,3,4]:
+        for uo in [30, 80]:
 
             tablename = "data_%d_%d" % (ndim, uo)
             config = get_config(sigmoddb, tablename)
@@ -319,9 +319,9 @@ def run_tests(sigmoddb, statsdb, **params):
             all_bounds = [(mid_bounds, 'mid'), (high_bounds, 'high')]
             pts = get_pts(sigmoddb, tablename)
             cs = reversed([0., 0.05, 0.075, 0.09, 0.1, 0.15, 0.2, 0.5])
-            cs = [0.5, 0.2]
+            #cs = [0.5, 0.2]
 
-            for klass in [BDT]:
+            for klass in [MR]:
                 run(sigmoddb, statsdb, tablename, all_bounds, cs=cs, klass=klass, **params)
 
 statsdb = create_engine('postgresql://localhost/dbwipes')
@@ -338,7 +338,7 @@ init_db(statsdb)
 tablename = 'data_2_30'
 config = get_config(sigmoddb, tablename)
 pts = get_pts(sigmoddb, tablename)
-run_tests(sigmoddb, statsdb, max_wait=12*60, granularity=15, use_mtuples=True, use_cache=True)
+run_tests(sigmoddb, statsdb, max_wait=12*60, granularity=15, use_mtuples=True, use_cache=False)
 
 if False:
     setup(sigmoddb)

@@ -97,6 +97,7 @@ class MR(Basic):
         self.setup_tables(full_table, bad_tables, good_tables, **kwargs)
 
         rules = None
+        self.opts_per_iter = []
         self.best = []
         self.start = time.time()
 
@@ -109,17 +110,11 @@ class MR(Basic):
             nadded = 0
             nnewgroups = 0
             new_rules = defaultdict(list)
-            #pdb.set_trace()
-            foo = False
-            if foo:
-                try:
-                    rules2 = defaultdict(list)
-                    [rules2[attr].append(ro.group) for attr, ro in self.make_rules(rules)]
-                    rules3 = defaultdict(list)
-                    ros = [ro for attr, ro in self.make_rules(rules2)]
-                except:
-                    pdb.set_trace()
-                pdb.set_trace()
+            
+            # for each combination of attributes
+            #  prune the groups that are less influential than the parent group's in
+            #  
+
             for attr, ro in self.make_rules(rules):
                 if self.stop:
                     break
@@ -140,10 +135,26 @@ class MR(Basic):
 #                break
 
             rules = new_rules
+            if niters == 1:
+                self.opts_per_iter.append(list(self.best))
+            else:
+                self.opts_per_iter.append(list(self.best[1:]))
+                if prev_best and prev_best in self.opts_per_iter[-1]:
+                    self.opts_per_iter[-1].remove(prev_best)
+            self.best = [max(self.best)] if self.best else []
+            prev_best = max(self.best) if self.best else None
+
 
         self.cost_clique = time.time() - self.start
 
 
+        ret = []
+        for bests in self.opts_per_iter:
+            bests.sort(reverse=True)
+            ret.extend( self.merge_rules(bests))
+        ret.sort(reverse=True)
+        self.final_clusters = ret
+        return ret
 
         self.best.sort(reverse=True)
         return self.merge_rules(self.best)
@@ -224,7 +235,7 @@ class MR(Basic):
 
 
         # assuming the best case (the good_stat was zero)
-        # would the influence beat the min of best so far?
+        # would the influence beat the best so far?
         if self.best and ro.best_inf <= max(self.best).inf:
             # if best tuple influence < rule influence:
             if ro.best_tuple_inf <= max(self.best).inf:
