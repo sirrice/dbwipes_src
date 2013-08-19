@@ -112,9 +112,13 @@ class Basic(object):
 
         pass
 
+    def cluster_to_rule(self, cluster):
+        rule = cluster.to_rule(self.dummy_table, self.cols, cont_dists=self.cont_dists, disc_dists=self.disc_dists)
+        return rule
+
 
     def influence_cluster(self, cluster):
-        rule = cluster.to_rule(self.dummy_table, self.cols, cont_dists=self.cont_dists, disc_dists=self.disc_dists)
+        rule = self.cluster_to_rule(cluster)
         return Basic.influence(self, rule)
 
 
@@ -174,6 +178,40 @@ class Basic(object):
             inf = ef(arr.data)
             infs.append(inf)
         return infs, map(len, datas)
+
+    def group_rules(self, rules):
+        influences = []
+        c = self.c
+        def f((delta, count)):
+          if count == 0: return 0
+          return delta / count**c
+
+        for rule in rules:
+          deltas, counts = self.bad_influences(rule)
+          infs = map(f, zip(deltas, counts))
+          influences.append(infs)
+        influences = np.asarray(influences)
+
+        try:
+          from sklearn.cluster import KMeans
+          clusterer = KMeans(10)
+          clusterer.fit(influences)
+          labels = clusterer.labels_
+          rules = np.asarray(rules)
+        except Exception as e:
+          print "problem running kmeans"
+          print e
+          pdb.set_trace()
+          return rules
+
+        ret = []
+        for labelval in set(labels):
+          idxs = labels == labelval
+          labelrules = rules[idxs]
+          ret.append(max(labelrules, key=lambda r: r.score))
+        return ret
+
+
 
 
 

@@ -46,7 +46,7 @@
 
 	$(function() {
     console.log("init running");
-		var opts = {overlap:-0, r:3.5};
+		var opts = {overlap:-3, r:3.5};
 		renderagg = new Renderer('aggplot', aggbrush, opts);
 		rendertup = new Renderer('tupplot', tupbrush, opts);
 		renderagg.on('brushevent', function(sobjs, labels, extents) {

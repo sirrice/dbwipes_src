@@ -3,7 +3,9 @@ import time
 import pdb
 import traceback
 import errfunc
+import numpy as np
 
+from sklearn.cluster import KMeans
 from itertools import chain
 from collections import defaultdict
 from datetime import datetime
@@ -115,7 +117,8 @@ def serial_hybrid(obj, aggerr, **kwargs):
             klass = MR 
             params.update({
                 'use_mtuples': False,
-                'max_wait': 60
+                'max_wait': 30,
+                'c': 0.
                 })
 
         else:
@@ -148,7 +151,7 @@ def serial_hybrid(obj, aggerr, **kwargs):
             dups.add(str(r))
             newrules.append(r)
         rules = newrules
-
+        rules = hybrid.group_rules(rules)
 
         cost = time.time() - start
         ncalls = 0
@@ -165,39 +168,41 @@ def serial_hybrid(obj, aggerr, **kwargs):
 
 
 
+def valid_table_cols(table, aggerr, kwargs={}):
+  return [attr.name for attr in table.domain
+          if (attr.name not in ['id', 'err'] and
+              attr.name not in aggerr.agg.cols and
+              attr.name not in kwargs.get('ignore_attrs',[]))]
+
 
 def parallel_hybrid(obj, aggerr, **kwargs):
 
-    def f(table, aggerr, queue):
-        try:
+    db = connect(obj.dbname)
+    obj.db = db
 
-            cols = [attr.name for attr in table.domain
-                    if (attr.name not in ['id', 'err']
-                        and attr.name not in aggerr.agg.cols
-                        and attr.name not in kwargs['ignore_attrs'])]
-            print cols
-            all_cols = cols + aggerr.agg.cols        
-            torm = [attr.name for attr in table.domain if attr.name not in all_cols]
-            table = rm_attr_from_domain(table, torm)
-            
-            start = time.time()
-            hybrid = SVMBottomUp(aggerr=aggerr,
-                            errperc=0.001,
-                            cols=cols,
-                            msethreshold=0.01,
-                            k=10,
-                            nprocesses=4,
-                            parallelize=True)
-            clusters = hybrid(table)
-            normalize_cluster_errors(clusters)
-            rules = clusters_to_rules(clusters, cols, table)
-            cost = time.time() - start
-            ncalls = 0
-            
-            queue.put( (rules, cost, ncalls) )
-        except:
-            traceback.print_exc()
-            queue.put(None)
+    def f(bad_tables, aggerr, klass, params, kwargs, queue):
+      try:
+        cols = valid_table_cols(bad_tables[0], aggerr, kwargs)
+        all_cols = cols + aggerr.agg.cols        
+        torm = [attr.name for attr in bad_tables[0].domain 
+                if attr.name not in all_cols]
+
+        bad_tables = [rm_attr_from_domain(t, torm) for t in bad_tables]
+        good_tables = []
+        _, full_table = reconcile_tables(bad_tables)
+ 
+        start = time.time()
+        hybrid = klass(**params)
+        clusters = hybrid(full_table, bad_tables, good_tables)
+        normalize_cluster_errors(clusters)
+        rules = clusters_to_rules(clusters, cols, full_table)
+        cost = time.time() - start
+        ncalls = 0
+        
+        queue.put( (rules, cost, ncalls) )
+      except:
+        traceback.print_exc()
+        queue.put(None)
 
     nprocesses = kwargs.get('nprocesses', 4)
     parallelize = kwargs.get('parallelize', True)
@@ -208,17 +213,50 @@ def parallel_hybrid(obj, aggerr, **kwargs):
     queue = Queue()
     npending = 0    
     totalcost, totalncalls = 0., 0.
-    partitions = parallel_get_partitions(obj, aggerr, nprocesses)
-    mastertable = merge_tables(partitions)
+
+    bad_partition_tables = parallel_get_partitions(obj, aggerr, nprocesses)
+    all_tables = []
+    map(all_tables.extend, bad_partition_tables)
+    _, mastertable = reconcile_tables(all_tables)
+    cols = valid_table_cols(all_tables[0], aggerr, kwargs)
+
+    params = {
+        'aggerr':aggerr,
+        'cols':cols,
+        'c' : 0.2,
+        'l' : 0.5,
+        'msethreshold': 0.01
+        }
+    params.update(dict(kwargs))
+
+    if aggerr.agg.func.__class__ in (errfunc.SumErrFunc, errfunc.CountErrFunc):
+      klass = MR 
+      params.update({
+        'use_mtuples': False,
+        'max_wait': 60,
+        'c': 0,
+        })
+    else:
+      klass = BDT
+      params.update({
+        'use_cache': False,
+        'use_mtuples': False,#True,
+        'epsilon': 0.005,
+        'min_improvement': 0.01,
+        'tau': [0.1, 0.5],
+        'c' : 0.3,
+        'p': 0.7
+        })
+
     
-    for partition in partitions:
+    for bad_tables in bad_partition_tables:
+        args = (bad_tables, aggerr, klass, params, kwargs, queue)
         if parallelize:
-            p = Process(target=f, args=(partition, aggerr, queue))
+            p = Process(target=f, args=args)
             p.start()
         else:
-            f(partition, aggerr, queue)
+            f(*args)
         npending += 1
-            
 
     results = []
     start = time.time()
@@ -237,11 +275,16 @@ def parallel_hybrid(obj, aggerr, **kwargs):
             pass
 
     results.sort(key=lambda r: r.quality, reverse=True)
+    hybrid = klass(**params)
+    hybrid.setup_tables(mastertable, all_tables, [])
+    results = hybrid.group_rules(results)
 
     totalcost = time.time() - start
     db.close()
 
+    return totalcost, totalncalls, mastertable, results
 
+    partitions = map(merge_tables, bad_partition_tables)
     results, merge_cost = parallel_rank_rules(aggerr, partitions, results, **kwargs)
 
     print "found rules"
@@ -354,35 +397,42 @@ def parallel_rank_rules(aggerr, tables, rules, **kwargs):
 
 
 class ProvenanceGetter(object):
-    def __init__(self, obj, cols):
-        self.obj = obj
-        self.cols = cols
+  def __init__(self, obj, cols):
+      self.obj = obj
+      self.cols = cols
 
-    def __call__(self, keysubrange):
-        obj = self.obj.clone()
-        try:
-            db = connect(obj.dbname)
-            obj.db = db
-            return get_provenance(obj, self.cols, keysubrange)
-        except:
-            traceback.print_exc()
-        finally:
-            try:
-                db.close()
-            except:
-                pass
+  def __call__(self, keysubrange):
+    obj = self.obj.clone()
+    try:
+      db = connect(obj.dbname)
+      obj.db = db
+      return get_provenance_split(obj, self.cols, keysubrange)
+      return get_provenance(obj, self.cols, keysubrange)
+    except:
+      traceback.print_exc()
+    finally:
+      try:
+        db.close()
+      except:
+        pass
 
 
 def parallel_get_partitions(obj, aggerr, nprocesses):
-    pool = Pool(8)
-    queue = Queue()
-    processes = []
-    args = [ ]
-    chunksize = max(1, len(aggerr.keys) / nprocesses)
-    partitions = pool.map(ProvenanceGetter(obj, aggerr.agg.cols), block_iter(aggerr.keys, nprocesses))
-    pool.close()
-    partitions = filter(lambda x:x, partitions)
-    return partitions
+  """
+  Returns a list of [table for each key subrange] lists
+  """
+  pool = Pool(8)
+  queue = Queue()
+  processes = []
+  args = [ ]
+  chunksize = max(1, len(aggerr.keys) / nprocesses)
+  per_process_keys = block_iter(aggerr.keys, nprocesses)
+  f = ProvenanceGetter(obj, aggerr.agg.cols)
+  partition_tables = pool.map(f, per_process_keys)
+  pool.close()
+  partition_tables = filter(lambda x:x, partition_tables)
+  print "got %s tables" % map(len, partition_tables)
+  return partition_tables
 
 
 

@@ -247,7 +247,7 @@ class Merger(object):
 
             def filter_cluster(c):
                 if c is None:
-                    reasons.append('0')
+                    reasons.append('.')
                     return False
                 if c.error == None:
                     reasons.append('s')

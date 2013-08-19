@@ -330,9 +330,9 @@ class CountFunc(Func):
     def delta(self, add=None, rm=None, update=False):
         ret = self.total
         if add is not None:
-            ret += len(add)
+            ret += sum(map(len,add))
         if rm is not None:
-            ret -= len(rm)
+            ret -= sum(map(len, rm))
 
         if update:
             self.total = ret

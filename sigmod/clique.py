@@ -101,6 +101,7 @@ class MR(Basic):
         self.best = []
         self.start = time.time()
 
+        nseen = 0
         niters = 0 
         while niters < self.max_complexity and not self.stop and (rules is None or rules):
             niters += 1
@@ -112,10 +113,11 @@ class MR(Basic):
             new_rules = defaultdict(list)
             
             # for each combination of attributes
-            #  prune the groups that are less influential than the parent group's in
+            # prune the groups that are less influential than the parent group's 
             #  
 
             for attr, ro in self.make_rules(rules):
+                nseen += 1
                 if self.stop:
                     break
                 nadded += self.top_k((ro,))
@@ -129,6 +131,22 @@ class MR(Basic):
                 if nnewgroups % 10000 == 0:
                     pass
                     #print "# new groups\t", nnewgroups, '\t', time.time()-self.start, self.max_wait
+
+            # all_rules = [rule for _, rule in self.make_rules(None)]
+            # grouper = self.grouper
+            # ef = self.bad_err_funcs[0]
+            # bad = self.bad_tables[0]
+            # attr = bad.domain[1]
+            # groups = [g for g in grouper.initial_groups()]
+            # groups = filter(lambda g: g[0][0] == attr, groups)
+            # group = groups[0]
+            # valid_groups = [g for g in group[1]]
+            # valid_group = valid_groups[0]
+            # table_inf = grouper.table_influence([attr], valid_groups, bad)
+            # ef = self.bad_err_funcs[0]
+            # foo = grouper._get_infs([table_inf], [ef], valid_group, True)
+            # rows = table_inf.get(valid_group, [])
+
 
             if not nadded: 
                 pass

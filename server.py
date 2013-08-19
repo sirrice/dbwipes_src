@@ -5,6 +5,7 @@ import json
 import md5
 import traceback
 from datetime import datetime
+
 from db import *
 from arch import *
 from util import *
@@ -17,7 +18,7 @@ app = Flask(__name__)
 
 @app.before_request
 def before_request():
-    dbname = request.form.get('db', 'intel')
+    dbname = request.form.get('db', 'fec12')
     g.db = connect(dbname)
     g.dbname = dbname
     g.tstamp = md5.md5(str(hash(datetime.now()))).hexdigest()
@@ -111,11 +112,10 @@ def intel_query():
         where = request.form.get('filter', '') 
 
         if not sql:
-            sql = """SELECT avg(temp), stddev(temp), date_trunc('hour',(date) + (time)) as dt
-            FROM readings
-            WHERE (((date) + (time)) > '2004-3-1') and (((date) + (time)) < '2004-3-5')
-            GROUP BY dt
-            ORDER BY dt ASC"""
+            sql = """SELECT sum(disb_amt), disb_dt as day
+            FROM expenses
+            WHERE cand_id = 'P80003338'
+            GROUP BY day ; """
 
         obj = get_query_sharedobj(sql, delids)
         if where.strip():
@@ -123,7 +123,7 @@ def intel_query():
         data_and_labels = run_query(obj)
 
         context['query'] = obj.parsed.prettify()
-        context['data'] = json.dumps(data_and_labels['data'][:30], default=json_handler)
+        context['data'] = json.dumps(data_and_labels['data'], default=json_handler)
         context['labels'] = json.dumps(data_and_labels['labels'])
         context['result_schema'] = [ (attr, t.__name__, True) for attr, t in obj.schema.items()]
         if 'data' in context:

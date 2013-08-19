@@ -185,6 +185,24 @@ class Grouper(object):
         return ret
 
 
+    def _get_infs(self, all_table_rows, err_funcs, g, bmaxinf):
+        ret = []
+        counts = []
+        maxinf = -1e1000000000000
+        for idx, ef, table_rows in zip(range(len(err_funcs)), err_funcs, all_table_rows):
+            rows = table_rows.get(g, [])
+            if not rows:
+                continue
+            
+            if bmaxinf:
+                for row in rows:
+                    curinf = self.influence_tuple(row, ef)
+                    maxinf = max(maxinf, curinf) 
+
+            ret.append(ef(rows))
+            counts.append(len(rows))
+        return ret, counts, maxinf
+
 
     def __call__(self, attrs, valid_groups):
         valid_groups = set(valid_groups)
@@ -197,29 +215,11 @@ class Grouper(object):
             good_table_rows.append(self.table_influence(attrs, valid_groups, table))
 #        print "scan time\t", (time.time() - start)
 
-        def get_infs(all_table_rows, err_funcs, g, bmaxinf):
-            ret = []
-            counts = []
-            maxinf = -1e1000000000000
-            for idx, ef, table_rows in zip(range(len(err_funcs)), err_funcs, all_table_rows):
-                rows = table_rows.get(g, [])
-                if not rows:
-                    continue
-                
-                if bmaxinf:
-                    for row in rows:
-                        curinf = self.influence_tuple(row, ef)
-                        maxinf = max(maxinf, curinf) 
-
-                ret.append(ef(rows))
-                counts.append(len(rows))
-            return ret, counts, maxinf
-
 
         start = time.time()
         for g in valid_groups:
-            bds, bcs, maxinf = get_infs(bad_table_rows, self.mr.bad_err_funcs, g, True)
-            gds, gcs, _ = get_infs(good_table_rows, self.mr.good_err_funcs, g, False)
+            bds, bcs, maxinf = self._get_infs(bad_table_rows, self.mr.bad_err_funcs, g, True)
+            gds, gcs, _ = self._get_infs(good_table_rows, self.mr.good_err_funcs, g, False)
             if not bcs:
                 continue
             yield Blah(attrs, g, bds, bcs, gds, gcs, maxinf, self.mr, self)

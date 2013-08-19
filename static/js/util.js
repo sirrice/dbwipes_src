@@ -300,6 +300,7 @@ _.extend(Renderer.prototype, Backbone.Events, {
 						.attr('cy', function(d) { return yscale(d.key)})
 						.attr('cx', function(d) { return xscale(d['__x__'])})
 						.attr('r', function(d){return summary.rscale(d.values.length)})
+            .attr('opacity', 0.8)
 						.attr('fill', function(d) { d['__color__'] = summary.cscale(d.values.length); return d.__color__; })
 						.attr('label', label);
 			}
