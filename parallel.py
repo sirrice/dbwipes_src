@@ -95,26 +95,27 @@ def serial_hybrid(obj, aggerr, **kwargs):
         _, full_table = reconcile_tables(bad_tables)
 
 
-        params = dict(kwargs)
-        params.update({
+        params = {
             'aggerr':aggerr,
             'cols':cols,
-            'c' : 0.3,
-            'l' : 0.5
-            })
+            'c' : 0.2,
+            'l' : 0.5,
+            'msethreshold': 0.01
+            }
             # errperc=0.001,
             # 
             # msethreshold=0.01,
             # k=10,
             # nprocesses=4,
             # parallelize=True,
-            # complexity_multiplier=1.5)
-
+            # complexity_multiplier=1.5}
+        params.update(dict(kwargs))
 
         if aggerr.agg.func.__class__ in (errfunc.SumErrFunc, errfunc.CountErrFunc):
             klass = MR 
             params.update({
-                'use_mtuples': False
+                'use_mtuples': False,
+                'max_wait': 60
                 })
 
         else:
@@ -132,6 +133,7 @@ def serial_hybrid(obj, aggerr, **kwargs):
         start = time.time()
         hybrid = klass(**params)
         clusters = hybrid(all_full_table, bad_tables, good_tables)
+        print "nclusters: %d" % len(clusters)
         #clusters = filter(lambda c: c.error >= 0, clusters)
         normalize_cluster_errors(clusters)
         clusters.sort(key=lambda c: c.error, reverse=True)

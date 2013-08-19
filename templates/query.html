@@ -88,7 +88,7 @@ var canned_queries = {
 var render_canned_queries = function(dbname) {
 	var template = Handlebars.compile($("#querylist-template").html());
 	var html = template(canned_queries[dbname]);
-	var ql = $(html);
+	var ql = $.parseHTML(html);
 	console.log([dbname, canned_queries[dbname], html])
 	$("#ql-container").empty().append(ql);
 

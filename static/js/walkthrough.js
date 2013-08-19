@@ -158,11 +158,10 @@ _.extend(FormStatus.prototype, Backbone.Events, {
 			return;
 		}
 
-		var newel = $(html);
+		var newel = $($.parseHTML(html));
 		this.el
 			.empty()
 			.append(newel)
-
 
 		newel.find('#fs-reset-bad').click(function(){
 			newel.find("#fs-bad").detach();

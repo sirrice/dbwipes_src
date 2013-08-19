@@ -3,7 +3,7 @@ import sys
 
 def connect(dbname):
     try:
-        connection = "dbname='%s' user='sirrice' port='5432'" % (dbname)
+        connection = "dbname='%s' user='sirrice' host='localhost' port='5432'" % (dbname)
         db = psycopg2.connect(connection)
     except:
         sys.stderr.write( "couldn't connect\n")

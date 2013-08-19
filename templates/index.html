@@ -9,9 +9,9 @@
 	<script type="text/javascript" src="/static/js/date.js" ></script>
 	<script type="text/javascript" src="/static/js/underscore-min.js" ></script>	
 	<script type="text/javascript" src="/static/js/backbone-min.js" ></script>	
-	<script type="text/javascript" src="/static/js/bootstrap.js" ></script>	
 	<script type="text/javascript" src="/static/js/d3.v2.js" ></script>
 	<script type="text/javascript" src="/static/js/handlebars.js" ></script>	
+	<script type="text/javascript" src="/static/js/bootstrap-mine.js" ></script>	
 	<script type="text/javascript" src="/static/js/util.js" ></script>
 	<script type="text/javascript" src="/static/js/walkthrough.js?{{g.tstamp}}" ></script>
 
@@ -30,14 +30,22 @@
 		gb_key : null,
 		filter : "",
 		clauseid : -1,
-		n_bad_tuple_ids : function() {return d3.sum(d3.keys(global_state.highlighted_tuple_ids).map(function(key){return global_state.highlighted_tuple_ids[key].length}))},
-		n_selected_keys : function() {return d3.sum(d3.keys(global_state.highlighted_keys).map(function(key){return global_state.highlighted_keys[key].length}))},
+    n_bad_tuple_ids : function() {
+      return d3.sum(d3.keys(global_state.highlighted_tuple_ids).map(function(key){
+        return global_state.highlighted_tuple_ids[key].length}))
+    },
+    n_selected_keys : function() {
+      return d3.sum(d3.keys(global_state.highlighted_keys).map(function(key){
+        return global_state.highlighted_keys[key].length}))
+    },
 		original_query : ""
 	}
 	renderagg = null;
 	rendetup = null;
+  data = null;
 
 	$(function() {
+    console.log("init running");
 		var opts = {overlap:-0, r:3.5};
 		renderagg = new Renderer('aggplot', aggbrush, opts);
 		rendertup = new Renderer('tupplot', tupbrush, opts);
@@ -48,7 +56,10 @@
 		}, renderagg);
 
 		{% if data %}
+      console.log("setting data");
 			data = {{data|safe}};
+      console.log(data);
+
 			labels = {{labels|safe}};
 			fix_date_objects(data, labels);
 
@@ -99,7 +110,7 @@ $("#overlay").click(function() {
 -->
 	<div class='row'> 
 <!--		<div class="span1">&nbsp;</div>-->
-		<div class="span10">
+		<div class="span10" style="position:fixed">
 			<div class="tab-content">
 			  <div class="tab-pane active" id="tab-aggplot">{% include "aggplot.html" %}</div>
 <!--			  <div class="tab-pane" id="tab-tupplot">{% include "tupplot.html" ignore missing %}</div>-->

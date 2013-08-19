@@ -123,9 +123,11 @@ def intel_query():
         data_and_labels = run_query(obj)
 
         context['query'] = obj.parsed.prettify()
-        context['data'] = json.dumps(data_and_labels['data'], default=json_handler)
+        context['data'] = json.dumps(data_and_labels['data'][:30], default=json_handler)
         context['labels'] = json.dumps(data_and_labels['labels'])
         context['result_schema'] = [ (attr, t.__name__, True) for attr, t in obj.schema.items()]
+        if 'data' in context:
+          print "data has %d points" % (len(context['data']))
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -244,6 +246,7 @@ def intel_debug():
                            errperc=0.001,
                            epsilon=0.05,
                            msethreshold=0.15,
+                           c=0.29,
                            complexity_multiplier=4.5)
 
 
@@ -273,7 +276,7 @@ def create_filter_options(obj):
     for label, clauses in obj.clauses.items():
         rules = [p[0] for p in obj.rules[label]]
         clauses = filter(lambda e:e.strip(), rm_dups(clauses, hash))
-        for rule, clause in zip(rules[:6], clauses[:6]):
+        for rule, clause in zip(rules[:30], clauses[:30]):
             # print "\t", clause
 
             tmpq = obj.clone()
