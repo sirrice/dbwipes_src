@@ -1,8 +1,8 @@
 {% if filter_opts %}
 
-<div class="page-header">
+<!--<div class="page-header">
 	<h2 class="heading">Filters to fix bad outputs</h2>
-</div>
+</div>-->
 
 <script type="text/javascript">
 function filter_click(clauseid, query, where, data, labels) {
@@ -15,6 +15,10 @@ function filter_click(clauseid, query, where, data, labels) {
 	global_state.clauseid = clauseid;
 	update_tupleplot();
 }
+
+// { idx:, query:, where: } of the clause that's been clicked.
+// null means nothing has been clicked
+var clickedInfo = null;
 </script>
 
 <div id="clause_filter_orig">
@@ -58,32 +62,75 @@ function filter_click(clauseid, query, where, data, labels) {
 
 {% for label, clauses in filter_opts %}
 	{% if clauses|length > 0 %}
-		<h2>{{label}}</h2>
-		{% for clause_parts, cquery, cwhere, cdata, idx in clauses %}
-            <ul class="filter-clause" id="clause_{{idx}}">
-            {% for clause in clause_parts %}
-                <li class='clause-part'>{{clause}}</li>
+    <!--<h2>{{label}}</h2>-->
+		{% for clause_parts, cquery, cwhere, cdata, equiv_clause_parts, idx in clauses %}
+      <ul class="filter-clause" id="clause_{{idx}}">
+        <span class="load-text">loading</span>
+        {% for clause in clause_parts %}
+            <li class='clause-part'>{{clause}}</li>
+        {% endfor %}
+      </ul>
+      <ul class="equiv-clauses" id="equiv_clauses_{{idx}}">
+        {% for equiv_clause_part in equiv_clause_parts %}
+          <ul class="equiv-clause">
+            {% for clause in equiv_clause_part %}
+              <li class="clause-part">{{clause}}</li>
             {% endfor %}
-            </ul>
+          </ul>
+        {% endfor %}
+      </ul>
 			<div id="clause_filter_{{idx}}"><pre class="btn btn-clause">Filter</pre></div>
 			<script type="text/javascript">
 			(function(){
 				var _query = "{{cquery|safe}}";
 				var _idx = "{{idx}}";
 				var _where = "{{cwhere|safe}}";
+        var clause = $("#clause_{{idx}}");
+
 				var cb_func = function(_resp) {	
 					var _data = _resp.data,
-						_labels = _resp.labels;
-					$("#tab-aggplot .heading small").text('rendering...');
+              _labels = _resp.labels;
+          clause.removeClass("filter-loading")
+					$("#aggplot .loading-text").text('rendering...');
 					filter_click(_idx, _query, _where, _data, _labels);
-					$("#tab-aggplot .heading small").empty();
+					$("#aggplot .loading-text").empty();
 				};
+        var _info = {query: _query, idx: _idx, where: _where, cb: cb_func.bind(this)};
 				
-				$("#clause_filter_{{idx}}").click(function() {
-					$("#tab-aggplot .heading small").text('loading...');
-					get_aggdata(_query, _idx, _where, cb_func);
-				});
-				get_aggdata(_query, _idx, _where);
+        clause.hover(
+          function() {
+            if (clickedInfo && clickedInfo.idx == _idx) return;
+            $("#aggplot .loading-text").text('loading...');
+            get_aggdata(_query, _idx, _where, cb_func);
+          },
+          function() {
+            if (clickedInfo && clickedInfo.idx == _idx) return;
+            if (clickedInfo) {
+              get_aggdata(
+                clickedInfo.query, clickedInfo.idx, 
+                clickedInfo.where, clickedInfo.cb);
+            } else {
+              filter_click("orig",  global_state.original_query, "", data, labels);
+            }
+          });
+        clause.click(function() {
+          if (clickedInfo && clickedInfo.idx == _idx)
+            clickedInfo = null; 
+          else
+            clickedInfo = _info;
+          $(".filter-clause").removeClass("filter-clicked");
+          if (clickedInfo) {
+            clause.addClass("filter-clicked");
+            $("#aggplot .loading-text").text('loading...');
+            get_aggdata(_query, _idx, _where, cb_func);
+          } else {
+            filter_click("orig",  global_state.original_query, "", data, labels);
+          }
+        });
+        clause.addClass("filter-loading");
+        get_aggdata(_query, _idx, _where, function() {
+            clause.removeClass("filter-loading");
+        });
 			})();
 
 			</script>

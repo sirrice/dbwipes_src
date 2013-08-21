@@ -284,7 +284,9 @@ def create_filter_options(obj):
             tmpq.add_where( cwhere )
             clause_parts = [c.strip() for c in str(rule).split(' and ')]
 
-            filter_opts[label].append( (clause_parts, tmpq.sql, cwhere, json.dumps({}), idx) )
+            equiv_clause_parts = map(lambda r: [c.strip() for c in str(r).split(' and ')], rule.cluster_rules)
+
+            filter_opts[label].append( (clause_parts, tmpq.sql, cwhere, json.dumps({}), equiv_clause_parts, idx) )
             idx += 1
     return filter_opts
 

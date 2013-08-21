@@ -41,6 +41,9 @@ class SDRule(object) :
         self.stats_nmeannorm = None
         self.stats_max = None
         self.parent_rule = None
+
+        # rules within the cluster (for Basic.group_rules)
+        self.cluster_rules = set()
         SDRule.__id__ += 1
 
     def __improvement__(self):

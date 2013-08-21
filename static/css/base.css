@@ -1,6 +1,24 @@
+body {
+  font-family: "Gill Sans";
+}
+
+textarea.input-xlarge {
+  background: rgb(250, 249, 236);
+  border: none;
+  font-size: 14pt;
+}
+
+#aggplot .loading-text {
+
+}
+
+
+.query-description-fieldset {
+  display: none;
+}
 
 text {
-	font-family: sans-serif;
+	font-family: "Gill Sans";
 	font-size: 9pt;
 }
 .brush{
@@ -78,15 +96,77 @@ div.xlabel {
 }
 
 .filter-clause {
-	font-size: 14pt;
-    line-height: 17pt;
-	color: #505050;
-    clear: both;
-    margin-top: 15px;
+  font-family: "Gill Sans";
+  font-size: 14pt;
+  line-height: 17pt;
+  color: white;
+  clear: both;
+  background: steelblue;
+  width: 100%;
+  padding: 1em;
+  list-style-type: none;
+  border-radius: 2px;
+  cursor: pointer;
+  position: relative;
+  margin: 0;
+  margin-top: 1em;
+}
+.filter-clause .load-text {
+  display: none;
+  color: black;
+}
+
+.filter-clause:hover {
+  background: rgb(53, 159, 219);
+}
+
+
+.filter-loading {
+  color: #333;
+  background: whitesmoke;
+}
+
+.filter-loading .load-text {
+  position: absolute;
+  display: inline;
+  top: 1em;
+  right: 1em;
+}
+
+.filter-loading:hover {
+  background: whitesmoke;
+}
+
+.filter-clicked {
+  background: rgb(75, 173, 102);
+}
+.filter-clicked:hover {
+  background: rgb(75, 173, 102);
+}
+
+.equiv-clauses {
+  margin-left: 1em;
+}
+.equiv-clause {
+  font-family: "Gill Sans";
+  font-size: 12pt;
+  line-height: 15pt;
+  color: white;
+  clear: both;
+  background: rgb(60, 79, 95);
+  width: 100%;
+  padding: .75em;
+  list-style-type: none;
+  border-radius: 2px;
+  cursor: pointer;
+  position: relative;
+  margin: 0;
+  margin-bottom: 5px;
 }
 
 .btn-clause {
     width: 150px;
+    display: none;
 }
 
 span.clause-part {

@@ -320,9 +320,9 @@ _.extend(Renderer.prototype, Backbone.Events, {
 								x = c.data()[0]['__x__'],
 								y = c.data()[0]['__y__'];
 						var valid = extents[0][0] <= x &&
-									extents[1][0] >= x &&
-									extents[0][1] <= y &&
-									extents[1][1] >= y;
+                        extents[1][0] >= x &&
+                        extents[0][1] <= y &&
+                        extents[1][1] >= y;
 						if (valid) {
 							var list = selectedobjs[c.attr('label')];
 							if (typeof(list) != 'undefined')
@@ -481,7 +481,7 @@ function update_tupleplot() {
 }
 
 function update_query(sql) {
-	$("#query, #errbox_query").text(sql);	
+	$("#query, #errbox_query").text(sql).val(sql);
 	global_state.query = sql;
 }
 

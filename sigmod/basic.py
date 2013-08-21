@@ -201,14 +201,17 @@ class Basic(object):
         except Exception as e:
           print "problem running kmeans"
           print e
-          pdb.set_trace()
           return rules
 
         ret = []
         for labelval in set(labels):
           idxs = labels == labelval
           labelrules = rules[idxs]
-          ret.append(max(labelrules, key=lambda r: r.score))
+          best = max(labelrules, key=lambda r: r.score)
+          labelrules = filter(lambda r: r.id != best.id, labelrules)
+          best.cluster_rules.update(labelrules)
+          ret.append(best)
+          
         return ret
 
 

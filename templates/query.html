@@ -60,28 +60,28 @@ var canned_queries = {
 			query : "SELECT sum(disb_amt), disb_dt as day\nFROM expenses\nGROUP BY day ;",
 			desc: "Total day by day expenses from 2012 Election. Data from the FEC.",
 			db: "fec12"
-		},
-		{
+		}
+/*		,{
 			id: 'sql_fec3',
 			query : "SELECT avg(disb_amt), cand_nm as cand_nm, cand_id\nFROM expenses2008\nGROUP BY cand_nm, cand_id",
 			name: "2008 Candidate Names",
 			desc: "List of candidate names and IDs.  ",
 			db: "fec12"
-		},
-		{
+		}*/
+/*		,{
 			id : 'sql_fec4',
 			name: "2008 Obama Campaign Expenses",
 			query : "SELECT sum(disb_amt), disb_dt as day\nFROM expenses2008\nWHERE cand_id = 'P80003338'\nGROUP BY day ;",
 			desc: "Total day by day expenses from the Obama 2008 Presidential campaign. Data from the FEC.",
 			db: "fec12"
-		},
-		{
+		}*/
+/*		,{
 			id : 'sql_fec5',
 			name: "2008 Total Campaign Expenses",
 			query : "SELECT sum(disb_amt), disb_dt as day\nFROM expenses2008\nGROUP BY day ;",
 			desc: "Total day by day expenses from 2008 Election. Data from the FEC.",
 			db: "fec12"
-		},
+		},*/
 	]}
 };
 
@@ -141,7 +141,7 @@ var render_canned_queries = function(dbname) {
 </div>
 </fieldset>
 
-<fieldset>
+<fieldset class="query-description-fieldset">
 	<label class="control-label" for="query">
 		Description
 	</label>
