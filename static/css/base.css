@@ -19,7 +19,7 @@ textarea.input-xlarge {
 
 text {
 	font-family: "Gill Sans";
-	font-size: 9pt;
+	font-size: 15pt;
 }
 .brush{
 	fill-opacity: 0;
@@ -147,7 +147,7 @@ div.xlabel {
 .equiv-clauses {
   margin-left: 1em;
 }
-.equiv-clause {
+.equiv-clause, .equiv-clauses-btn, .clause-hide {
   font-family: "Gill Sans";
   font-size: 12pt;
   line-height: 15pt;
@@ -164,6 +164,11 @@ div.xlabel {
   margin-bottom: 5px;
 }
 
+
+.equiv-clauses-btn, .clause-hide {
+  margin-left: 1em;
+}
+
 .btn-clause {
     width: 150px;
     display: none;
@@ -176,4 +181,15 @@ span.clause-part {
 
 #walkthrough-popover .control-label, #walkthrough-popover .controls span, #walkthrough-popover label {
     font-size: 15pt;
+}
+
+
+#ql-container {
+  display: none;
+  }
+
+
+
+#sb_addbad.clicked, #sb_addgood.clicked {
+  background: grey;
 }

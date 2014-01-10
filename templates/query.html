@@ -50,7 +50,7 @@ var canned_queries = {
 		{
 			id : 'sql_fec1',
 			name: "2012 Obama Campaign Expenses",
-			query : "SELECT sum(disb_amt), disb_dt as day\nFROM expenses\nWHERE cand_id = 'P80003338'\nGROUP BY day ;",
+			query : "SELECT sum(disb_amt), disb_dt as day\nFROM expenses\nWHERE cand_id = 'P80003338'\nGROUP BY day;",
 			desc: "Total day by day expenses from the Obama 2012 Presidential campaign. Data from the FEC.",
 			db: "fec12"
 		},

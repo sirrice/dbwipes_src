@@ -84,12 +84,10 @@ def serial_hybrid(obj, aggerr, **kwargs):
     cost, ncalls = 0, 0
     rules = []
     try:
-        cols = [attr.name for attr in bad_tables[0].domain
-                if (attr.name not in ['id', 'err']
-                    and attr.name not in aggerr.agg.cols
-                    and attr.name not in kwargs['ignore_attrs'])]
+        cols = valid_table_cols(bad_tables[0], aggerr, kwargs)
         all_cols = cols + aggerr.agg.cols        
         torm = [attr.name for attr in bad_tables[0].domain if attr.name not in all_cols]
+        _logger.debug("valid cols: %s" % cols)
 
         bad_tables = [rm_attr_from_domain(t, torm) for t in bad_tables]
         good_tables = [rm_attr_from_domain(t, torm) for t in good_tables]
@@ -118,7 +116,8 @@ def serial_hybrid(obj, aggerr, **kwargs):
             params.update({
                 'use_mtuples': False,
                 'max_wait': 30,
-                'c': 0.
+                'c': 0.05,
+                'granularity': 100
                 })
 
         else:
@@ -132,6 +131,9 @@ def serial_hybrid(obj, aggerr, **kwargs):
                 'c' : 0.3,
                 'p': 0.7
                 })
+
+        klass = SVM
+        params.update({})
 
         start = time.time()
         hybrid = klass(**params)
@@ -169,11 +171,25 @@ def serial_hybrid(obj, aggerr, **kwargs):
 
 
 def valid_table_cols(table, aggerr, kwargs={}):
-  return [attr.name for attr in table.domain
-          if (attr.name not in ['id', 'err'] and
-              attr.name not in aggerr.agg.cols and
-              attr.name not in kwargs.get('ignore_attrs',[]))]
+  attrs = table.domain
+  ret = []
+  for attr in attrs:
+    if attr.name in ['id', 'err', 'pickup_id', 'pickup_address', 'epoch']:
+      continue
+    if attr.name in aggerr.agg.cols:
+      continue
+    if attr.name in kwargs.get('ignore_attrs',[]):
+      continue
 
+    nunique = len(set([row[attr].value for row in table]))
+    print "%s:\tnunique %s" % (attr.name, nunique)
+
+    if attr.varType != orange.VarTypes.Continuous:
+      if nunique > 0.5 * len(table) or nunique > 7000:
+        continue
+    ret.append(attr.name)
+  return ret
+    
 
 def parallel_hybrid(obj, aggerr, **kwargs):
 

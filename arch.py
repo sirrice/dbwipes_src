@@ -121,11 +121,11 @@ def extract_agg_vals(vals):
         print e
         return vals
 
+
+
 def parse_debug_args(db, form, dbname=None):
     data = json.loads(form.get('data', '{}'))
     goodkeys = json.loads(form.get('goodkeys', '{}'))
-    errtype = int(form['errtype'])
-    erreq = form.get('erreq', '0') # only if error type == EQUALTO
     errids = json.loads(form.get('bad_tuple_ids', '{}'))
     sql = form['query']
     attrs = json.loads(form.get('attrs', '[]'))
@@ -143,9 +143,14 @@ def parse_debug_args(db, form, dbname=None):
 
     ignore_attrs = set(obj.attrnames).difference(attrs)
     obj.ignore_attrs = ignore_attrs
-
-
     qobj = obj.parsed    
+
+
+    erreq = errtype = None
+    if 'errtype' in form:
+      errtype = int(form['errtype'])
+      erreq = form.get('erreq', '0') # only if error type == EQUALTO
+
     errors = []
     for agg in qobj.select.aggregates:
         label = agg.shortname
@@ -537,16 +542,16 @@ def sdrule_to_clauses(rule):
             # XXX: rounding to the 3rd decimal place as a hack            
             clause = []
             if c.min == c.max and c.min != -infinity:
-                v = math.floor(c.min * float(1e3)) / 1e3
+                v = math.floor(c.min * float(1e7)) / 1e7
                 vint = int(v)
                 vfloat = v - vint
                 v = vint + float(str(vfloat).rstrip('0.') or '0')
                 clause.append( 'abs(%s - %s) < 0.001' % (v, name) )
             else:
                 if c.min != -infinity:
-                    clause.append( '%.3f <= %s' % (math.floor(c.min * float(1e3)) / 1e3, name) )
+                    clause.append( '%.7f <= %s' % (math.floor(c.min * float(1e7)) / 1e7, name) )
                 if c.max != infinity:
-                    clause.append( '%s <= %.3f ' % (name, math.ceil(c.max * float(1e3)) / 1e3) )
+                    clause.append( '%s <= %.7f ' % (name, math.ceil(c.max * float(1e7)) / 1e7) )
             if clause:
                 ret.append( ' and '.join(clause) )
         elif attr.varType == orange.VarTypes.Discrete:

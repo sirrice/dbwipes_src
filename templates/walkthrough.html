@@ -53,12 +53,12 @@ submit
 							The bad outputs are
 						</label>
 						<div class="controls">
-							<label class="radio"><input type="radio" name="errtype" {% if errtype == '0' %}checked{% endif %} value="0">Wrong.</label>
+							<label class="radio"><input id="errtype_0" type="radio" name="errtype" {% if errtype == '0' %}checked{% endif %} value="0">Wrong.</label>
 						<!--	<label class="radio inline" style="margin-right: 10px;">
 								<input type="radio" name="errtype" {% if errtype == '1' %}checked{% endif %} value="1">Should be equal to
 							</label> <input class="inline" name="erreq" value="{{endeq}}" style=""/>-->
-							<label class="radio"><input type="radio" name="errtype" {% if errtype == '2' %}checked{% endif %} value="2">Too High</label>
-							<label class="radio"><input type="radio" name="errtype" {% if errtype == '3' %}checked{% endif %} value="3">Too Low</label>
+							<label class="radio"><input id="errtype_2" type="radio" name="errtype" {% if errtype == '2' %}checked{% endif %} value="2">Too High</label>
+							<label class="radio"><input id="errtype_3" type="radio" name="errtype" {% if errtype == '3' %}checked{% endif %} value="3">Too Low</label>
 						</div>
 					</div>
 				</div>
@@ -185,6 +185,47 @@ $("#errorbox").submit(function() {
 		if ($(d).attr("checked"))
 			global_state.attrs.push($(d).val())
 	})
+  try{
+
+    var errtype = $("input[name=errtype]:checked", "#errorbox").val();
+    if (!errtype || errtype === undefined) {
+      // assume only one agrgegate
+      var bad_keys = global_state.selected_keys[labels.aggs[0]],
+          good_keys = global_state.good_keys[labels.aggs[0]];
+
+      var bad_vals = bad_keys.map(function(key) {
+        return global_state.key2val[key];
+      });
+
+      var good_vals = null;
+      if (good_keys) {
+        good_vals = good_keys.map(function(key) { 
+          return global_state.key2val[key]
+        })
+      } else {
+        good_vals = d3.keys(global_state.key2val).filter(function(key) {
+            return bad_keys.indexOf(key) == -1;
+        }).map(function(key) { return global_state.key2val[key]; })
+      }
+    }
+
+    console.log(d3.mean(bad_vals));
+    console.log(d3.mean(good_vals));
+    var avgbad = d3.mean(bad_vals),
+        avggood = d3.mean(good_vals);
+    if (avgbad > avggood) {
+      errtype = "2";
+    } else if (avgbad < avggood) {
+      errtype = "3";
+    } else {
+      errtype = "0";
+    }
+    console.log("setting errtype to " + errtype)
+    $("#errtype_"+errtype).attr("checked", true)
+  } catch(exception) {
+    console.log(exception)
+    return false;
+  }
 
 	$("#errbox_attrs").val(JSON.stringify(global_state.attrs));
 	$("#errbox_errids").val(JSON.stringify(global_state.bad_tuple_ids));

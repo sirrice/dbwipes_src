@@ -26,6 +26,7 @@
 		highlighted_keys : {},
 		good_keys : {}, 
 		selected_keys : {},  // S
+    key2val: {},
 		attrs : [],
 		gb_key : null,
 		filter : "",
@@ -50,8 +51,8 @@
 		renderagg = new Renderer('aggplot', aggbrush, opts);
 		rendertup = new Renderer('tupplot', tupbrush, opts);
 		renderagg.on('brushevent', function(sobjs, labels, extents) {
-			var x = 830,
-				y = 270,
+			var x = 800,
+				y = 50,
 				w = new Walkthrough({x:x, y:y});
 		}, renderagg);
 
@@ -59,9 +60,18 @@
       console.log("setting data");
 			data = {{data|safe}};
       console.log(data);
-
 			labels = {{labels|safe}};
 			fix_date_objects(data, labels);
+
+
+      labels.aggs.forEach(function(aggname) {
+        global_state.key2val = {};
+        data.forEach(function(row) {
+          var x = row[labels.x];
+          var y = row[aggname];
+          global_state.key2val[x] = y;
+        })
+      })
 
 			renderagg.render_scatter(data, labels);
 			global_state.query = $("#query").text();
@@ -88,8 +98,9 @@ $("#overlay").click(function() {
 <body style="margin: 20px; z-index:1">
 
 
-
-{% include "query.html" %}
+<div style="display:block;">
+  {% include "query.html" %}
+</div>
 
 
 <div class="row-fluid">

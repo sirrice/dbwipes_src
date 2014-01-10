@@ -163,6 +163,7 @@ class MR(Basic):
             prev_best = max(self.best) if self.best else None
 
 
+        _logger.debug("finished, merging now")
         self.cost_clique = time.time() - self.start
 
 

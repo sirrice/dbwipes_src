@@ -1,4 +1,3 @@
-import bsddb3
 import json
 import time
 import pdb
@@ -248,6 +247,7 @@ class BDT(Basic):
 
     @instrument
     def load_from_cache(self):
+        import bsddb3
         self.cache = bsddb3.hashopen('./dbwipes.cache')
         try:
             myhash = str(hash(self))
@@ -263,6 +263,7 @@ class BDT(Basic):
 
     @instrument
     def cache_results(self, clusters):
+        import bsddb3
         # save the clusters in a dictionary
         if self.use_cache:
             myhash = str(hash(self))

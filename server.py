@@ -1,5 +1,5 @@
-from gevent.pywsgi import WSGIServer # must be pywsgi to support websocket
-from geventwebsocket.handler import WebSocketHandler
+#from gevent.pywsgi import WSGIServer # must be pywsgi to support websocket
+#from geventwebsocket.handler import WebSocketHandler
 from flask import Flask, request, render_template, g, redirect
 import json
 import md5
@@ -102,6 +102,7 @@ def json_handler(obj):
 
 
         
+@app.route('/debug/', methods=["GET"])
 @app.route('/', methods=["POST", "GET"])
 def intel_query():
     context = dict(request.form.items())
@@ -114,8 +115,8 @@ def intel_query():
         if not sql:
             sql = """SELECT sum(disb_amt), disb_dt as day
             FROM expenses
-            WHERE cand_id = 'P80003338'
-            GROUP BY day ; """
+            WHERE cand_id = 'P80003338' 
+            GROUP BY day; """
 
         obj = get_query_sharedobj(sql, delids)
         if where.strip():
@@ -222,7 +223,7 @@ def run_base_tuple_query(obj, keys):
 
     
 
-@app.route('/debug/', methods=["POST", "GET"])
+@app.route('/debug/', methods=["POST"])
 def intel_debug():
     context = dict(request.form.items())
     try:    
@@ -276,7 +277,7 @@ def create_filter_options(obj):
     for label, clauses in obj.clauses.items():
         rules = [p[0] for p in obj.rules[label]]
         clauses = filter(lambda e:e.strip(), rm_dups(clauses, hash))
-        for rule, clause in zip(rules[:30], clauses[:30]):
+        for rule, clause in zip(rules[:10], clauses[:10]):
             # print "\t", clause
 
             tmpq = obj.clone()
@@ -299,7 +300,9 @@ if __name__ == "__main__":
         lambda value, curs: float(value) if value is not None else None)
     psycopg2.extensions.register_type(DEC2FLOAT)
     app.debug = True
-    address = ('', 8000)
-    http_server = WSGIServer(address, app, handler_class=WebSocketHandler)
-    print "running"
-    http_server.serve_forever()
+    app.run(port=8000)
+
+    #address = ('', 8000)
+    #http_server = WSGIServer(address, app)#, handler_class=WebSocketHandler)
+    #print "running"
+    #http_server.serve_forever()

@@ -1,4 +1,4 @@
-<fieldset style="display: none">
+<fieldset style="display: block">
 <!--<legend>Choose a Database</legend>-->
 <div class="control-group">
 	<label class="control-label" for="dbname">Choose a Database</label>
@@ -9,6 +9,8 @@
 			</option>
 			<option value="intel" {% if g.dbname == 'intel' %}selected="selected"{% endif %}>
 				Intel Sensor Dataset
+			<option value="bigdata" {% if g.dbname == 'bigdata' %}selected="selected"{% endif %}>
+        Bigdata dataset
 			</option>
 			<!--<option value="mattdata"  {% if g.dbname == 'mattdata' %}selected="selected"{% endif %}>
 				PartNews Dataset

@@ -437,7 +437,7 @@ class SDRule(object) :
             return '%s = %s' % (name, v)
 
         elif domain[c.position].varType == orange.VarTypes.Continuous:
-            return '%.2f <= %s < %.2f' % (c.min, name, c.max) 
+            return '%.7f <= %s < %.7f' % (c.min, name, c.max) 
 
         return None
 

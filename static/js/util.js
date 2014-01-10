@@ -137,6 +137,7 @@ _.extend(Renderer.prototype, Backbone.Events, {
 				.attr('transform', function(d) {console.log([xscale(d), d]);return 'translate('+xscale(d)+' 0)'})
 		xrules.append('text')
 				.attr('y', this.h)
+        .attr('dy', '-0em')
 				.text(xscale.tickFormat(8))
 		this.svg.append('line')
 		var yrules = this.svg.append('g').selectAll('.ylabel')
@@ -294,6 +295,19 @@ _.extend(Renderer.prototype, Backbone.Events, {
 						.data(summary.data)
 					.enter().append('g')
 
+        /*
+        cells.selectAll('rect')
+          .data(function(d) { return d.values;})
+        .enter().append('rect')
+          .attr('x', function(d) { return xscale(d['__x__']) - summary.rscale(d.values.length) / 2})
+          .attr('y', function(d) { return yscale(d.key); })
+          .attr('width', function(d){return summary.rscale(d.values.length)})
+          .attr('height', function(d){return yscale(0)-yscale(d.key);})
+          .attr('opacity', 0.8)
+          .attr('fill', function(d) { d['__color__'] = summary.cscale(d.values.length); return d.__color__; })
+          .attr('label', label);
+          */
+
 				cells.selectAll('circle')
 						.data(function(d) { return d.values;})
 					.enter().append('circle')
@@ -351,9 +365,10 @@ _.extend(Renderer.prototype, Backbone.Events, {
 
 		} catch(err) {
 			console.log(['error', err])
+      throw err;
 			$("#"+this.rootid).hide();
-			$("#rawdata").show();
-			render_raw_table(_data);
+			//$("#rawdata").show();
+			//render_raw_table(_data);
 		}
 
 	}
@@ -511,10 +526,11 @@ var get_tuples = (function(){
 				}, 'json')
 			} 			
 
-		} else {
-
+		} else if (clauseid in cache) {
+      data = _cache[clauseid];
+      console.log("cache hit on clause: " + clauseid);
+      console.log(data);
 			_funcs[clauseid](_cache[clauseid]);
-
 		}
 		return _cache[clauseid];
 	} 

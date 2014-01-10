@@ -70,15 +70,22 @@ var clickedInfo = null;
             <li class='clause-part'>{{clause}}</li>
         {% endfor %}
       </ul>
-      <ul class="equiv-clauses" id="equiv_clauses_{{idx}}">
-        {% for equiv_clause_part in equiv_clause_parts %}
-          <ul class="equiv-clause">
-            {% for clause in equiv_clause_part %}
-              <li class="clause-part">{{clause}}</li>
-            {% endfor %}
-          </ul>
-        {% endfor %}
-      </ul>
+      {% if equiv_clause_parts %}
+      <div class="equiv-clauses-btn" id="equiv_btn_{{idx}}">expand</div>
+      <div id="equiv_clauses_{{idx}}" style="display: none;">
+        <div class="equiv-clauses" >
+          {% for equiv_clause_part in equiv_clause_parts %}
+            <ul class="equiv-clause">
+              {% for clause in equiv_clause_part %}
+                <li class="clause-part">{{clause}}</li>
+              {% endfor %}
+            </ul>
+          {% endfor %}
+          <li class="clause-hide">Collapse</li>
+        </div>
+      </div>
+      {% endif %}
+
 			<div id="clause_filter_{{idx}}"><pre class="btn btn-clause">Filter</pre></div>
 			<script type="text/javascript">
 			(function(){
@@ -131,6 +138,21 @@ var clickedInfo = null;
         get_aggdata(_query, _idx, _where, function() {
             clause.removeClass("filter-loading");
         });
+
+        // connect expand-btn
+        var show_btn = $("#equiv_btn_{{idx}}");
+        var equivs = $("#equiv_clauses_{{idx}}");
+        var hide_btn = equivs.find(".clause-hide");
+        show_btn.click(function() {
+          show_btn.hide();
+          equivs.show();
+        })
+        hide_btn.click(function() {
+          equivs.hide();
+          show_btn.show();
+        })
+
+
 			})();
 
 			</script>

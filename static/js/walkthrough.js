@@ -24,14 +24,16 @@ var Walkthrough = function(opts) {
 		.off()
 		.on('click', $.proxy(function(){
 			global_state.selected_keys = clone(global_state.highlighted_keys);
-			this.step += 1;
+      $("#sb_addbad").toggleClass("clicked");
+			//this.step += 1;
 			this.render();
 		}, this))
 	this.el.find("#sb_addgood")
 		.off()
 		.on('click', $.proxy(function(){
 			global_state.good_keys = clone(global_state.highlighted_keys);
-			this.step += 1;
+      $("#sb_addgood").toggleClass("clicked");
+			//this.step += 1;
 			this.render();
 		}, this))
 
@@ -68,7 +70,7 @@ _.extend(Walkthrough.prototype, Backbone.Events, {
 		}
 
 
-		if (step < 2) {
+		if (step < 0) {
 			this.next
 				.val('next')
 				.removeClass('btn-primary')
@@ -120,6 +122,7 @@ _.extend(FormStatus.prototype, Backbone.Events, {
 	},
 
 	render: function() {
+            return;
 		var nbad = this.count(global_state.selected_keys),
 			ngood = this.count(global_state.good_keys),
 			errtype = $("input[name=errtype]:checked").val(),

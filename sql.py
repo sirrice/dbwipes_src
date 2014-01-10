@@ -106,9 +106,11 @@ class Query(object):
 class Select(list):
     def __init__(self, *args):
         try:
-            super(Select, self).__init__(*args)
-        except:
-            super(Select, self).__init__(*[args])
+          super(Select, self).__init__(*args)
+        except Exception as e:
+          print e
+          print args
+          super(Select, self).__init__(*[args])
 
     def __str__(self):
         return ', '.join(map(str, self))
