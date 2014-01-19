@@ -1,3 +1,4 @@
+import pdb
 import datetime
 import operator
 import sqlparse
@@ -113,12 +114,15 @@ def extract_agg_vals(vals):
         if len(set([(d.hour, d.minute, d.second) for d in ret])) == 1:
             ret = [d.date() for d in ret]
         else:
-            print d
             ret = [d - timedelta(hours=5) for d in ret] # compensate for 'Z' +4 timezone
 
         return ret
     except Exception as e:
-        print e
+      try:
+        ret = [datetime.strptime(val, '%Y-%m-%d').date() for val in vals]
+        return ret
+      except Exception as ee:
+        print ee
         return vals
 
 
@@ -136,10 +140,17 @@ def parse_debug_args(db, form, dbname=None):
     except:
         erreq = 0.
 
+    try:
+      c = float(form.get('c', 0.3))
+    except:
+      c = 0.3
+
     #_logger.debug( "parse_args\tgood keys\t%s", goodkeys)
     #_logger.debug( "parse_args\tattrs\t%s", attrs)
     #_logger.debug( "parse_args\tbad tuples\t%s", errids.keys())
     obj = SharedObj(db, sql, bad_tuple_ids=errids)
+
+    obj.c = c
 
     ignore_attrs = set(obj.attrnames).difference(attrs)
     obj.ignore_attrs = ignore_attrs
@@ -150,7 +161,7 @@ def parse_debug_args(db, form, dbname=None):
     if 'errtype' in form:
       errtype = int(form['errtype'])
       erreq = form.get('erreq', '0') # only if error type == EQUALTO
-
+    
     errors = []
     for agg in qobj.select.aggregates:
         label = agg.shortname
@@ -212,6 +223,7 @@ class SharedObj(object):
         self.merged_tables = {}
         self.rules = {}
         self.clauses = {}
+        self.c = 0.3
         
         
     def get_tuples(self, keys, attrs=None):
