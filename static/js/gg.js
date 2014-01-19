@@ -28966,6 +28966,7 @@ var prov = {};
       Prov.__super__.constructor.call(this, this.idFunc);
       this.tag2id = {};
       this.id2tag = {};
+      this.badtables = {};
     }
 
     Prov.prototype.rm = function(node) {
@@ -28986,14 +28987,14 @@ var prov = {};
       var id;
       this.add(node);
       id = this.idFunc(node);
+      if (!(id in this.id2tag)) {
+        this.id2tag[id] = {};
+      }
       if (tag != null) {
         if (!(tag in this.tag2id)) {
           this.tag2id[tag] = {};
         }
         this.tag2id[tag][id] = true;
-        if (!(id in this.id2tag)) {
-          this.id2tag[id] = {};
-        }
         this.id2tag[id][tag] = true;
       }
       return _.keys(this.id2tag[id]);
@@ -29021,11 +29022,12 @@ var prov = {};
     };
 
     Prov.prototype.backward = function(outputs, type, userf) {
-      var f, ret,
+      var bads, f, ret,
         _this = this;
       if (userf == null) {
         userf = null;
       }
+      bads = this.badtables;
       ret = {};
       if (userf == null) {
         userf = function(node) {
@@ -29033,6 +29035,9 @@ var prov = {};
         };
       }
       f = function(node, path) {
+        if (_this.idFunc(node) in bads) {
+          return true;
+        }
         if (userf(node, path)) {
           return ret[_this.idFunc(node)] = node;
         }
@@ -29044,11 +29049,12 @@ var prov = {};
     };
 
     Prov.prototype.forward = function(inputs, type, userf) {
-      var f, ret,
+      var bads, f, ret,
         _this = this;
       if (userf == null) {
         userf = null;
       }
+      bads = this.badtables;
       ret = {};
       if (userf == null) {
         userf = function(node) {
@@ -29056,6 +29062,9 @@ var prov = {};
         };
       }
       f = function(node, path) {
+        if (_this.idFunc(node) in bads) {
+          return true;
+        }
         if (userf(node, path)) {
           return ret[_this.idFunc(node)] = node;
         }
@@ -29132,25 +29141,60 @@ var prov = {};
           var _ref1;
           return _ref1 = row.id, __indexOf.call(ids, _ref1) >= 0;
         });
-        filtered.each(function(row) {
-          return ret.push(row);
+        filtered.map(function(row) {
+          return ret.push(row.shallowClone());
         });
       }
       return ret;
     };
 
+    Prov.prototype.done = function() {
+      return this.badtables = this.badTables;
+    };
+
+    Prov.prototype.badTables = function() {
+      var bad, leaf, leaftables, p, tables, tid, _i, _len, _ref,
+        _this = this;
+      tables = this.nodesByTag('table');
+      leaftables = tables.filter(function(t) {
+        return _this.children(t, 'table').length === 0;
+      });
+      bad = {};
+      while (leaftables.length > 0) {
+        leaf = leaftables.pop();
+        tid = this.idFunc(leaf);
+        if ((this.parents(leaf, 'input').length === 0) && (this.parents(leaf, 'output').length === 0) && _.difference(this.children(leaf, 'table').map(function(n) {
+          return n.id;
+        }), _.keys(bad)).length === 0) {
+          bad[tid] = true;
+          _ref = this.parents(leaf, 'table');
+          for (_i = 0, _len = _ref.length; _i < _len; _i++) {
+            p = _ref[_i];
+            leaftables.push(p);
+          }
+        }
+      }
+      return bad;
+    };
+
     Prov.prototype.toDot = function(rankdir) {
-      var text,
+      var badtables, text,
         _this = this;
       if (rankdir == null) {
         rankdir = 'TD';
       }
+      badtables = this.badTables();
       text = [];
       text.push("digraph G {");
       text.push("graph [rankdir=" + rankdir + "]");
       _.each(this.edges(), function(edge) {
         var color, n1, n2, type, weight;
         n1 = edge[0], n2 = edge[1], type = edge[2], weight = edge[3];
+        if (__indexOf.call(_this.tag(n1), 'table') >= 0) {
+          if (_this.idFunc(n1) in badtables) {
+            return;
+          }
+        }
         color = (function() {
           switch (type) {
             case 'output':
@@ -29172,6 +29216,23 @@ var prov = {};
       });
       text.push("}");
       return text.join("\n");
+    };
+
+    Prov.prototype.isTableUsed = function(t) {
+      var f, ret, seen,
+        _this = this;
+      ret = false;
+      seen = {};
+      f = function(n) {
+        var ps;
+        seen[_this.idFunc(n)] = true;
+        ps = _this.parents(n, 'input');
+        if (ps.length > 0) {
+          return ret = true;
+        }
+      };
+      this.dfs(f, t, 'table');
+      return [ret, _.keys(seen)];
     };
 
     /*

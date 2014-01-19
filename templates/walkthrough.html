@@ -43,65 +43,36 @@ submit
 					</div>
 				</div>			
 
+        <div style="display: none;">
+        {% for attrname, type, checked in result_schema %}
 
+          <label class="checkbox">
+            <input type="checkbox" checked class="errattrs" id="errattrs_{{attrname}}" value="{{attrname}}"/>
+          </label>
 
+        {% endfor %}
+        </div>
 
+        <div class="controls" style="display: none">
+          <label class="radio"><input type="radio" id="errtype_0" name="errtype" {% if errtype == '0' %}checked{% endif %} value="0">Wrong.</label>
+          <!--        <label class="radio inline" style="margin-right: 10px;">
+          <input type="radio" id="errtype_1" name="errtype" {% if errtype == '1' %}checked{% endif %} value="1">Should be equal to
+          </label> <input class="inline" name="erreq" value="{{endeq}}" style=""/>-->
+          <label class="radio"><input type="radio" id="errtype_2" name="errtype" {% if errtype == '2' %}checked{% endif %} value="2">Too High</label>
+        <label class="radio"><input type="radio" id="errtype_3" name="errtype" {% if errtype == '3' %}checked{% endif %} value="3">Too Low</label>
+        </div>
 
-				<div class="block" id="walkthrough-1">
-					<div class="control-group">
-						<label class="control-label" for="errortypes">
-							The bad outputs are
-						</label>
-						<div class="controls">
-							<label class="radio"><input id="errtype_0" type="radio" name="errtype" {% if errtype == '0' %}checked{% endif %} value="0">Wrong.</label>
-						<!--	<label class="radio inline" style="margin-right: 10px;">
-								<input type="radio" name="errtype" {% if errtype == '1' %}checked{% endif %} value="1">Should be equal to
-							</label> <input class="inline" name="erreq" value="{{endeq}}" style=""/>-->
-							<label class="radio"><input id="errtype_2" type="radio" name="errtype" {% if errtype == '2' %}checked{% endif %} value="2">Too High</label>
-							<label class="radio"><input id="errtype_3" type="radio" name="errtype" {% if errtype == '3' %}checked{% endif %} value="3">Too Low</label>
-						</div>
-					</div>
-				</div>
+        <textarea style="display:none;" id="errbox_query" name="query">{{query|safe}}</textarea>
+        <input type="hidden" id="errbox_errids" name="bad_tuple_ids" value="{}"/>        
+        <input type="hidden" id="errbox_val" name="data" value="{}"/>
+        <input type="hidden" id="errbox_goodkeys" name="goodkeys" value="{}"/>
+        <input type="hidden" id="errbox_db" name="db" value="intel"/>
+        <input type="hidden" id="errbox_attrs" name="attrs" value="[]"/>
 
-
-				<div class="block" id="walkthrough-2">
-					<div class="control-group">
-						<label class="control-label">
-							Analyze these attributes
-						</label>
-						<div class="controls">
-							<div>
-						{% for attrname, type, checked in result_schema %}
-
-							<label class="checkbox">
-								<input type="checkbox" {%if checked%}checked{%endif%} class="errattrs" id="errattrs_{{attrname}}" value="{{attrname}}"/>
-								<div class="row">
-								<div class="span2">{{attrname}}</div>
-								<div class="span1">{{type}}</div>
-								</div>
-							</label>
-
-						{% endfor %}
-							</div>
-						</div>
-					</div>
-				</div>
-
-
-				<textarea style="display:none;" id="errbox_query" name="query">{{query|safe}}</textarea>
-				<input type="hidden" id="errbox_errids" name="bad_tuple_ids" value="{}"/>	
-				<input type="hidden" id="errbox_val" name="data" value="{}"/>
-				<input type="hidden" id="errbox_goodkeys" name="goodkeys" value="{}"/>
-				<input type="hidden" id="errbox_db" name="db" value="intel"/>
-				<input type="hidden" id="errbox_attrs" name="attrs" value="[]"/>
 
 
 				<div class='form-actions'>
 					<input type="submit" id="errbox_submit" class="btn btn-primary" value="Debug Highlighted Points!" style="float:right;"></input>
-					<button id="errbox_prev" disabled='disabled' class="btn" style="float:right; width: 7em" >
-						Previous
-					</button>
-
 					<div style="clear:both"></div>
 				</div>
 
@@ -154,29 +125,9 @@ submit
 
 {% endraw %}
 
-<!--
-<script type="text/javascript">
-$("#sb_err").click(function() {
-    $('#link-tupplot').tab('show');
-    update_tupleplot();
-})
-$("#sb_addbad").click(function() {
-	global_state.selected_keys = clone(global_state.highlighted_keys);
-})
-$("#sb_addgood").click(function() {
-	global_state.good_keys = clone(global_state.highlighted_keys);
-})
-$("#sb_clearbad").click(function() {
-	global_state.selected_keys = {};
-})
-$("#sb_cleargood").click(function() {
-	global_state.good_keys = {};
-})
-</script>
--->
 <script type="text/javascript">
 $("#errorbox").submit(function() {
-	if (global_state.n_selected_keys() == 0) {
+	if (global_state.bad_keys.length == 0) {
 		error("Please select 1+ points to debug!")
 		return false;
 	}
@@ -187,32 +138,40 @@ $("#errorbox").submit(function() {
 	})
   try{
 
-    var errtype = $("input[name=errtype]:checked", "#errorbox").val();
+    var errtype = false;
     if (!errtype || errtype === undefined) {
       // assume only one agrgegate
-      var bad_keys = global_state.selected_keys[labels.aggs[0]],
-          good_keys = global_state.good_keys[labels.aggs[0]];
+      var yattr = labels.aggs[0];
 
-      var bad_vals = bad_keys.map(function(key) {
-        return global_state.key2val[key];
+      var bad_keys = global_state.bad_keys;
+      var bad_vals = global_state.bad_keys.map(function(row) {
+        return row.get(yattr);
       });
 
       var good_vals = null;
-      if (good_keys) {
-        good_vals = good_keys.map(function(key) { 
-          return global_state.key2val[key]
-        })
+      var good_keys = null;
+      if (global_state.good_keys.length > 0) {
+        good_keys = global_state.good_keys;
+        good_vals = global_state.good_keys.map(function(row) { 
+          return row.get(yattr);
+        });
       } else {
-        good_vals = d3.keys(global_state.key2val).filter(function(key) {
-            return bad_keys.indexOf(key) == -1;
-        }).map(function(key) { return global_state.key2val[key]; })
+        var bad_ids = global_state.bad_keys.map(function(row) { return row.id; });
+        good_keys = data.filter(function(row) {
+          return !_.contains(bad_ids, row.id);
+          })
+        
+        good_vals = good_keys.map(function(row) {
+          return row.get(yattr);
+        })
+        good_keys = _.sample(good_keys.all(), 10)
       }
     }
 
     console.log(d3.mean(bad_vals));
     console.log(d3.mean(good_vals));
     var avgbad = d3.mean(bad_vals),
-        avggood = d3.mean(good_vals);
+      avggood = d3.mean(good_vals);
     if (avgbad > avggood) {
       errtype = "2";
     } else if (avgbad < avggood) {
@@ -223,14 +182,30 @@ $("#errorbox").submit(function() {
     console.log("setting errtype to " + errtype)
     $("#errtype_"+errtype).attr("checked", true)
   } catch(exception) {
-    console.log(exception)
+    console.log(exception.stack)
     return false;
   }
+  
+  
+  var form_bad_keys = {};
+  form_bad_keys[labels.aggs[0]] = bad_keys.map(function(row) { 
+    return row.get(labels.x);
+  });
+  var form_good_keys = {};
+  form_good_keys[labels.aggs[0]] = good_keys.map(function(row) {
+    return row.get(labels.x);
+  });
+  global_state.attrs = [];
+  $(".errattrs").get().forEach(function(d) {
+    if(true || $(d).attr("checked")) {
+      global_state.attrs.push($(d).val());
+    }
+  })
 
 	$("#errbox_attrs").val(JSON.stringify(global_state.attrs));
 	$("#errbox_errids").val(JSON.stringify(global_state.bad_tuple_ids));
-	$("#errbox_val").val(JSON.stringify(global_state.selected_keys));
-	$("#errbox_goodkeys").val(JSON.stringify(global_state.good_keys));	
+	$("#errbox_val").val(JSON.stringify(form_bad_keys));
+	$("#errbox_goodkeys").val(JSON.stringify(form_good_keys));
 	$("#errbox_db").val(global_state.db);
 	return true;	
 });

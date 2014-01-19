@@ -3,13 +3,15 @@
 	<link rel="stylesheet" type="text/css" href="/static/css/bootstrap.css">	
 	<link rel="stylesheet" type="text/css" href="/static/css/base.css?{{g.tstamp}}">
 	<link rel="stylesheet" type="text/css" href="/static/css/all.css?{{g.tstamp}}">
+	<link rel="stylesheet" type="text/css" href="/static/css/gg.css?{{g.tstamp}}">
 
 
 	<script type="text/javascript" src="/static/js/jquery.js" ></script>
 	<script type="text/javascript" src="/static/js/date.js" ></script>
 	<script type="text/javascript" src="/static/js/underscore-min.js" ></script>	
 	<script type="text/javascript" src="/static/js/backbone-min.js" ></script>	
-	<script type="text/javascript" src="/static/js/d3.v2.js" ></script>
+  <script type="text/javascript" src="/static/js/gg.js?" ></script>	
+	<script type="text/javascript" src="/static/js/d3.min.js" ></script>
 	<script type="text/javascript" src="/static/js/handlebars.js" ></script>	
 	<script type="text/javascript" src="/static/js/bootstrap-mine.js" ></script>	
 	<script type="text/javascript" src="/static/js/util.js" ></script>
@@ -17,69 +19,37 @@
 
 
 	<script>
-		
-	global_state = {
-		db : "{{g.dbname}}",
-		query : "",
-		highlighted_tuple_ids : {},
-		bad_tuple_ids : {},  // D'
-		highlighted_keys : {},
-		good_keys : {}, 
-		selected_keys : {},  // S
-    key2val: {},
-		attrs : [],
-		gb_key : null,
-		filter : "",
-		clauseid : -1,
-    n_bad_tuple_ids : function() {
-      return d3.sum(d3.keys(global_state.highlighted_tuple_ids).map(function(key){
-        return global_state.highlighted_tuple_ids[key].length}))
-    },
-    n_selected_keys : function() {
-      return d3.sum(d3.keys(global_state.highlighted_keys).map(function(key){
-        return global_state.highlighted_keys[key].length}))
-    },
-		original_query : ""
-	}
-	renderagg = null;
-	rendetup = null;
-  data = null;
+    var cache = {}
+    global_state = {
+      db : "{{g.dbname}}",
+      query : "",
+      yrange: [Infinity, -Infinity],
+      highlighted_keys: [],
+      bad_keys: [],
+      good_keys: [],
+      bad_tuple_ids: {}, // legacy, passed to server but not used
+      walkthrough: null
+    }
+
 
 	$(function() {
-    console.log("init running");
-		var opts = {overlap:-3, r:3.5};
-		renderagg = new Renderer('aggplot', aggbrush, opts);
-		rendertup = new Renderer('tupplot', tupbrush, opts);
-		renderagg.on('brushevent', function(sobjs, labels, extents) {
-			var x = 800,
-				y = 50,
-				w = new Walkthrough({x:x, y:y});
-		}, renderagg);
-
 		{% if data %}
-      console.log("setting data");
-			data = {{data|safe}};
-      console.log(data);
+      data = {{data|safe}}
 			labels = {{labels|safe}};
-			fix_date_objects(data, labels);
+
+      denormalized = []
+
+			data = gg.data.fromArray({{data|safe}});
 
 
-      labels.aggs.forEach(function(aggname) {
-        global_state.key2val = {};
-        data.forEach(function(row) {
-          var x = row[labels.x];
-          var y = row[aggname];
-          global_state.key2val[x] = y;
-        })
-      })
-
-			renderagg.render_scatter(data, labels);
 			global_state.query = $("#query").text();
 			global_state.original_query = $("#query").text();			
-		{% endif %}
-		global_state.db = "{{g.dbname}}";
-	});
+      global_state.walkthrough = new Walkthrough({})
+      global_state.walkthrough.close()
+      global_state.plot = render_data(data, labels, global_state.query);
 
+		{% endif %}
+	});
 
 	</script>
 </head>
@@ -106,42 +76,16 @@ $("#overlay").click(function() {
 <div class="row-fluid">
 
 
-	<div class="span7">
-	<div style="">
-
-<!--	<div class="page-header">
-		<h1>Interact with results</h1>
-	</div>-->
-
-<!--	<ul class="nav nav-tabs">
-	  <li class="active"><a id="link-aggplot" href="#tab-aggplot" data-toggle="tab">Aggregates</a></li>
-	  <li><a id="link-tupplot" href="#tab-tupplot" data-toggle="tab">Individual Tuples</a></li>
-	  <li><a id="link-rawdata" href="#tab-rawdata" data-toggle="tab">Raw Data</a></li>
-	</ul>
--->
-	<div class='row'> 
-<!--		<div class="span1">&nbsp;</div>-->
-		<div class="span10" style="position:fixed">
-			<div class="tab-content">
-			  <div class="tab-pane active" id="tab-aggplot">{% include "aggplot.html" %}</div>
-<!--			  <div class="tab-pane" id="tab-tupplot">{% include "tupplot.html" ignore missing %}</div>-->
-<!--			  <div class="tab-pane" id="tab-rawdata">{% include "rawdata.html" ignore missing %}</div>-->
-			</div>
-		</div>
-		<div class="span1">&nbsp;</div>
-	</div>
-	 
-	<script>
-	  $(function () {
-	    $('#tab-aggplot').tab('show');
-	  })
-	</script>
-
-
-
-	</div>
-	</div>
-
+	<div class="span8" style="max-width: 850px">
+    <div id="aggplot">
+      <div class="heading">
+        <span class="legend"></span>
+        <small class="loading-text"></small>
+      </div>
+      <svg></svg>
+      <div class="xlabel"></div>
+    </div>
+  </div>
 
 	<!-- Right Column -->
 	<div class="span4">

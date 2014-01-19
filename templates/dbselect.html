@@ -1,5 +1,4 @@
 <fieldset style="display: block">
-<!--<legend>Choose a Database</legend>-->
 <div class="control-group">
 	<label class="control-label" for="dbname">Choose a Database</label>
 	<div class="controls">
@@ -9,12 +8,9 @@
 			</option>
 			<option value="intel" {% if g.dbname == 'intel' %}selected="selected"{% endif %}>
 				Intel Sensor Dataset
-			<option value="bigdata" {% if g.dbname == 'bigdata' %}selected="selected"{% endif %}>
+			<!--<option value="bigdata" {% if g.dbname == 'bigdata' %}selected="selected"{% endif %}>
         Bigdata dataset
-			</option>
-			<!--<option value="mattdata"  {% if g.dbname == 'mattdata' %}selected="selected"{% endif %}>
-				PartNews Dataset
-			</option>			-->
+      </option>-->
 		</select>
 		<a class="btn-small" id="btn_schema" href="#">show schema</a>
 	</div>
@@ -30,16 +26,16 @@
 $("#dbselect").change(function() {
 	var dbname = $("#dbselect option:selected").val()
 	global_state.db = dbname;
+  var q = canned_queries[dbname].query;
+  global_state.query = q;
+  update_query(q);
 	d3.select("#fs_schema").attr("loaded", "no").attr("loading", "false")
 	$("#btn_schema").click().click();
-
-	render_canned_queries(dbname);
 })
 
 
 
 $(function() {
-	render_canned_queries($("#dbselect option:selected").val());
 	if ($("#query").text().match(/^\s+$/)) {
 		$("#ql-container button:first").click();
 	}

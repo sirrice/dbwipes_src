@@ -1,8 +1,6 @@
 body {
   font-family: "Gill Sans";
-  width: 1000px;
   margin: .25in auto;
-  background: rgba(221, 204, 187, 0.15);
 }
 h1 {
   font-weight: 300;
