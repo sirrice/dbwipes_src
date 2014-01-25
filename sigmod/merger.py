@@ -306,7 +306,7 @@ class Merger(object):
             return
 
         try:
-            import bsddb3
+            import bsddb as bsddb33
             self.cache =  bsddb3.hashopen(self.CACHENAME)
             myhash = str(hash(self.learner))
             c = str(self.learner.c)
@@ -346,7 +346,7 @@ class Merger(object):
         c = self.learner.c
         if self.use_cache:
             try:
-                import bsddb3
+                import bsddb as bsddb33
                 self.cache =  bsddb3.hashopen(self.CACHENAME)
                 if myhash not in self.cache:
                     self.cache.close()

@@ -132,7 +132,7 @@ def serial_hybrid(obj, aggerr, **kwargs):
                 'p': 0.7
                 })
 
-        klass = SVM
+        #klass = SVM
         params.update({})
 
         start = time.time()

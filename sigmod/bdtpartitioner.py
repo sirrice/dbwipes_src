@@ -23,44 +23,13 @@ from basic import Basic
 from sampler import Sampler
 from merger import Merger
 from settings import *
+from node import Node
 
 inf = 1e10000000
 _logger = get_logger()
 
 
 
-
-class Node(object):
-    def __init__(self, rule):
-        self.rule = rule
-        self.children = []
-        self.parent = None
-        self.n = 0
-        self.influence = -inf
-        self.prev_attr = None
-        self.prev_score = None
-        self.prev_scores = []
-        self.score = inf
-
-
-        self.cards = None # caches the cardinality of in each input group
-        self.states = None # caches M-tuples
-
-    def set_score(self, score):
-        self.influence = score
-
-    def add_child(self, child):
-        self.children.append(child)
-
-
-    def __leaves__(self):
-        if not self.children:
-            return [self]
-        return chain(*[child.leaves for child in self.children])
-    leaves = property(__leaves__)
-
-    def __str__(self):
-        return '%.4f\t%d\t%s' % (self.influence, self.n, self.rule)
 
 
 class BDTTablesPartitioner(Basic):
@@ -75,6 +44,10 @@ class BDTTablesPartitioner(Basic):
         self.SCORE_ID = kwargs['SCORE_ID']
         self.inf_bounds = None 
         self.min_improvement = kwargs.get('min_improvement', .01)
+
+
+        self.max_wait = kwargs.get('max_wait', 2*60*60)
+        self.start_time = None
 
         self.sampler = Sampler(self.SCORE_ID)
 
@@ -108,26 +81,36 @@ class BDTTablesPartitioner(Basic):
     def sample(self, data, samp_rate):
         return self.sampler(data, samp_rate)
 
+    def should_idx_stop(self, args):
+      idx, infs = args
+      if len(infs) < self.min_pts:
+          return True
 
-    def should_stop(self, samples): 
-        def f(args):
-            idx, sample = args
-            if len(sample) < self.min_pts:
-                return True
-            h = lambda row: self.influence(row, idx)
-            infs = map(h, sample)
-            if len(infs) <= 1:
-                return True
+      infmax = max(infs)
+      thresh = self.compute_threshold(infmax, idx)
+      std = np.std(infs)
+      maxv, minv = max(infs), min(infs)
+      return std < thresh and maxv - minv < thresh
 
-            infmax = max(infs)
-            thresh = self.compute_threshold(infmax, idx)
-            std = np.std(infs)
-            maxv, minv = max(infs), min(infs)
-            return std < thresh and maxv - minv < thresh
+    def print_status(self, rule, datas, sample_infs):
+      bools = map(self.should_idx_stop, enumerate(sample_infs))
+      perc_passed = np.mean(map(float, bools))
 
-        bools = map(f, enumerate(samples))
-        #return np.mean(map(float, bools)) >= 0.95
-        return reduce(and_, bools)
+      all_infs = filter(bool, sample_infs)
+      maxstd = max(map(np.std, all_infs))
+      minmin = min(map(min, all_infs))
+      uu = np.mean(map(np.mean, all_infs))
+      maxes = map(max, all_infs)
+      threshes = [self.compute_threshold(v, idx) for idx, v in enumerate(maxes)]
+      npts = sum(map(len, datas)) if datas else 0
+      _logger.debug('%.2f\tnpts(%d)\t%4f - %4f\t%.4f\t%.4f : %.4f : %.4f\t%.4f\t%s' , 
+                    perc_passed, npts, self.inf_bounds[0][0], self.inf_bounds[0][1], 
+                    maxstd, minmin, uu, max(maxes), min(threshes), str(rule))
+
+ 
+    def should_stop(self, sample_infs): 
+      bools = map(self.should_idx_stop, enumerate(sample_infs))
+      return reduce(and_, bools)
 
 
     def influence(self, row, idx):
@@ -150,120 +133,52 @@ class BDTTablesPartitioner(Basic):
         return ret
 
 
-    def estimate_infs(self, samples):
-        f = lambda (idx, sample): map(lambda row: self.influence(row, idx), sample)
-        infs = map(f, enumerate(samples))
-        infs = filter(bool, infs)
-        return infs
+    def compute_infs(self, idx, samples):
+      return [self.influence(r, idx) for r in samples]
 
-    def estimate_inf(self, samples):
-        return np.mean(map(np.mean,self.estimate_infs(samples)))
+    def estimate_inf(self, sample_infs):
+        return np.mean(map(np.mean, filter(bool, sample_infs)))
 
     def get_scores(self, rules, samples):
-        scores = []
-        for idx, sample in enumerate(samples):
-            score = self.get_score_for_rules(rules, sample, idx)
-            scores.append(score)
-        scores = filter(lambda s: s!=-inf, scores)
-        return scores
+      sample2infs = defaultdict(list)
+      rule2infs = defaultdict(list)
+      scores = []
+      for idx, sample in enumerate(samples):
+        for rule in rules:
+          infs = self.compute_infs(idx, rule.filter(sample))
+          rule2infs[rule].append(infs)
+          sample2infs[idx].append(infs)
 
-    def get_score(self, rules, samples):
-        scores = self.get_scores(rules, samples)
-        score = scores and self.merge_scores(scores) or -inf
-        return score
+      for idx in xrange(len(samples)):
+        allinfs = sample2infs[idx]
+        score = self.get_score_for_infs([idx]*len(allinfs), allinfs)
+        scores.append(score)
 
-    def get_score_for_rules(self, rules, sample, idx):
-        new_samples = map(lambda r: r.filter_table(sample), rules)
-        return self.get_score_for_samples(new_samples, [idx]*len(new_samples))
+      scores = filter(lambda s: s!=-inf, scores)
+      return scores
 
-    def get_score_for_samples(self, samples, idxs):
-        stats = []
-        for idx, samp in zip(idxs, samples):
-            if len(samp):
-                stats.append((idx, self.compute_score(samp, idx)))
-        if len(stats):
-            counts, scores = [], []
-            for idx, (n, mean, std, maxinf, mininf) in stats:
-                try:
-                    thresh = self.compute_threshold(maxinf, idx)
-                except:
-                    pdb.set_trace()
-                    self.compute_score(samples[2], 2)
-                inf_bounds = self.inf_bounds[idx]
-                if inf_bounds[1] == inf_bounds[0]:
-                    scores.append(0)
-                    counts.append(n)
-                else:
-                    scores.append( ((thresh - inf_bounds[0]) / (inf_bounds[1]-inf_bounds[0])) * (std - thresh) )
-                    counts.append(n)
-            return np.mean(scores)#wmean(scores, counts)#ret
+    def get_score_for_infs(self, idxs, samp_infs):
+        scores, counts = [], []
+        for idx, infs in zip(idxs, samp_infs):
+          if not len(infs): continue
+          thresh = self.compute_threshold(max(infs), idx)
+          bounds = self.inf_bounds[idx]
+          inf_range = bounds[1] - bounds[0]
+          if not inf_range:
+            scores.append(0)
+            counts.append(n)
+          else:
+            std = np.std(infs)
+            scores.append(((thresh - bounds[0]) / inf_range) * (std - thresh))
+            counts.append(len(infs))
+        if scores:
+          return np.mean(scores)
         return -inf
-
-
-
-
-    def compute_score(self, data, idx):
-        f = lambda row: self.influence(row, idx)
-        try:
-            infs = [self.influence(r,idx) for r in data]
-            if not(sum(infs)):
-                return len(infs), 0, 0, 0, 0
-            return len(infs), wmean(infs, infs), np.std(infs), max(infs), min(infs)
-        except:
-            import traceback
-            traceback.print_exc()
-            pdb.set_trace()
-
 
     def merge_scores(self, scores):
         if scores:
-            return np.mean(scores) + np.std(scores)
+          return np.percentile(scores, 75)
         return -inf
-
-    def print_status(self, rule, datas, samples):
-        def f(args):
-            idx, sample = args
-            if len(sample) < self.min_pts:
-                return True
-            h = lambda row: self.influence(row, idx)
-            infs = map(h, sample)
-            if len(infs) <= 1:
-                return True
-
-            infmax = max(infs)
-            thresh = self.compute_threshold(infmax, idx)
-            std = np.std(infs)
-            maxv, minv = max(infs), min(infs)
-            return std < thresh and maxv - minv < thresh
-
-        bools = map(f, enumerate(samples))
-        perc_passed = np.mean(map(float, bools))
-
-
-
-        all_infs = self.estimate_infs(samples)
-        maxstd = max(map(np.std, all_infs))
-        minmin = min(map(min, all_infs))
-        uu = np.mean(map(np.mean, all_infs))
-        maxes = map(max, all_infs)
-        threshes = [self.compute_threshold(v, idx) for idx, v in enumerate(maxes)]
-        npts = sum(map(len, datas)) if datas else 0
-        _logger.debug('%.2f\tnpts(%d)\t%4f - %4f\t%.4f\t%.4f : %.4f : %.4f\t%.4f\t%s' , 
-                      perc_passed, npts, self.inf_bounds[0][0], self.inf_bounds[0][1], 
-                      maxstd, minmin, uu, max(maxes), min(threshes), str(rule))
-
- 
-    def in_box(self, node):
-        xb, yb = False, False
-        for c in node.rule.filter.conditions:
-            attr = self.merged_table.domain[c.position]
-            if attr.name == 'x':
-                if c.min >= 35 and c.max <= 65:
-                    xb = True
-            elif attr.name == 'y':
-                if c.min >= 35 and c.max <= 65:
-                    yb = True
-        return xb and yb
 
 
     def get_states(self, tables):#node):
@@ -287,23 +202,35 @@ class BDTTablesPartitioner(Basic):
 
         return states
     
+    def adjust_score(self, score, node, attr, rules):
+      # penalize excessive splitting along a single dimension if it is not helping
+      if attr.var_type == Orange.feature.Type.Discrete:
+        score = score - (0.15) * abs(score)
+      else:
+        if attr == node.prev_attr:
+          score = score + (0.01) * abs(score)
+          if False and self.skinny_penalty(rules):
+            score = score + (0.6) * abs(score)
+      return score
+
+
     def skinny_penalty(self, rules):
-        for rule in rules:
-            edges = []
-            for c in rule.filter.conditions:
-                attr = self.merged_table.domain[c.position]
-                if attr.var_type == Orange.feature.Type.Discrete:
-                    continue
-                edges.append(c.max - c.min)
-            if len(edges) > 1:
-                volume = reduce(mul, edges)
-                mean_edge = sum(edges) / float(len(edges))
-                max_vol = mean_edge ** len(edges)
-                perc = (volume / max_vol) ** (1./len(edges))
-                if perc < 0.05:
-                    return True
-                return (1. - perc) * 1.5
-            return False
+      for rule in rules:
+        edges = []
+        for c in rule.filter.conditions:
+            attr = self.merged_table.domain[c.position]
+            if attr.var_type == Orange.feature.Type.Discrete:
+                continue
+            edges.append(c.max - c.min)
+        if len(edges) > 1:
+            volume = reduce(mul, edges)
+            mean_edge = sum(edges) / float(len(edges))
+            max_vol = mean_edge ** len(edges)
+            perc = (volume / max_vol) ** (1./len(edges))
+            if perc < 0.05:
+                return True
+            return (1. - perc) * 1.5
+        return False
 
         
         
@@ -312,85 +239,58 @@ class BDTTablesPartitioner(Basic):
         data = rule.examples
         datas = map(rule.filter_table, tables)
         samples = [self.sample(*pair) for pair in zip(datas, samp_rates)]
-        counts = map(len, datas)
-        node.n = sum(counts)
-        node.cards = counts
+        node.cards = map(len, datas)
+        node.n = sum(node.cards)
 
         if node.n == 0:
-            return node
+          return node
+
+        f = lambda (idx, samps): self.compute_infs(idx, samps)
+        sample_infs = map(f, enumerate(samples))
+        curscore = self.get_score_for_infs(range(len(samples)), sample_infs)
+        est_inf = self.estimate_inf(sample_infs)
+        node.set_score(est_inf)
 
         if node.parent:
-            self.print_status(rule, datas, samples)
-            if self.should_stop(samples):
-                node.set_score(self.estimate_inf(samples))
-                node.states = self.get_states(datas)
-                if not node.states:
-                    pdb.set_trace()
-                    self.get_states(data)
-                return node
+          self.print_status(rule, datas, sample_infs)
+          if self.should_stop(sample_infs):
+            node.states = self.get_states(datas)
+            return node
 
 
         attr_scores = []
         for attr, new_rules in self.child_rules(rule):
-#            if min(max(len(r(d)) for d in datas) for r in new_rules) == 0:
-#                # if it just reduces the granularity but doesn't split the points,
-#                # then just do it
-#                attr_scores = [(attr, new_rules, node.prev_score, node.prev_scores)]
-#                break
-                
-            scores = self.get_scores(new_rules, samples)
-            if not scores:
-                continue
-            score = self.merge_scores(scores)
-                
-            # penalize excessive splitting along a single dimension if it is not helping
-            if attr.var_type == Orange.feature.Type.Discrete:
-                score = score - (0.15) * abs(score)
-#            else:
-#                if attr == node.prev_attr:
-#                    score = score + (0.05) * abs(score)
-#                    if False and self.skinny_penalty(new_rules):
-#                        score = score + (0.6) * abs(score)
-
-            if score != -inf:
-                attr_scores.append((attr, new_rules, score, scores))
+          scores = self.get_scores(new_rules, samples)
+          score = self.merge_scores(scores)
+          score = self.adjust_score(score, node, attr, new_rules)
+          if score == -inf: continue
+          attr_scores.append((attr, new_rules, score, scores))
 
         if not attr_scores:
-            node.set_score(self.estimate_inf(samples))
-            node.states = self.get_states(datas)
-            return node
+          node.states = self.get_states(datas)
+          print "no attrscores"
+          return node
 
         attr, new_rules, score, scores = min(attr_scores, key=lambda p: p[-2])
-        
 
-
-        node.score = min(scores) if scores else  -inf
-        minscore = self.get_score_for_samples(samples, range(len(samples)))
-        minscore = minscore - abs(minscore) * self.min_improvement
+        node.score = min(scores) 
+        minscore = curscore - abs(curscore) * self.min_improvement
         if node.score >= minscore and minscore != -inf:
-            _logger.debug("score didn't improve\t%.7f >= %.7f", min(scores), minscore)
-            node.set_score(self.estimate_inf(samples))
-            return node
+          _logger.debug("score didn't improve\t%.7f >= %.7f", min(scores), minscore)
+          return node
 
         all_new_srs = self.update_sample_rates(new_rules, datas, samp_rates)
 
         for new_rule, new_samp_rates in zip(new_rules, all_new_srs):
-            child = Node(new_rule)
-            child.prev_attr = attr
-            child.prev_scores = scores
-            child.prev_score = score
-            child.parent = node
+          child = Node(new_rule)
+          child.prev_attr = attr
+          child.parent = node
 
-            self.grow(child, datas, new_samp_rates)
+          self.grow(child, datas, new_samp_rates)
 
-            if child and child.n:
-                if child.influence != -inf:
-                    node.add_child(child)
+          if child and child.n and child.influence != -inf:
+            node.add_child(child)
 
-        if len(node.children):
-            node.set_score(max([n.influence for n in node.children]))
-        else:
-            node.set_score(self.estimate_inf(samples))
         return node
 
 

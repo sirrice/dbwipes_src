@@ -171,9 +171,6 @@ def json_query():
     data_and_labels = {'data' : {}, 'labels' : {}}
     try:
         sql = request.form['query']
-        #delids = json.loads(request.form.get('bad_tuple_ids', '{}')) # ids to delete
-        #where = request.form.get('filter', '')
-        #obj = get_query_sharedobj(sql, delids)
         data = run_sql_query(sql)
     except Exception as e:
         import traceback
