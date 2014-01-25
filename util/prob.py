@@ -7,13 +7,14 @@ import Orange
 import numpy as np
 
 
-def wmean(vals, weights):
+def wmean(vals, weights=None):
+    if weights is None: return np.mean(vals)
     vals = np.array(vals)
     weights = np.array(weights).astype(float)
     return (vals * weights).sum() / weights.sum()
 
 
-def wstd(vals, weights):
+def wstd(vals, weights=None):
     """
     compute a weighted standard deviation
     """

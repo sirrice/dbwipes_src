@@ -13,6 +13,9 @@ from Orange.data.filter import *
 from matplotlib.backends.backend_pdf import PdfPages
 import matplotlib.pyplot as plt
 
+nan = float('nan')
+inf = float('inf')
+
 matplotlib.use("Agg")
 
 """
@@ -102,6 +105,8 @@ def powerset(iterable):
     s = list(iterable)
     return chain.from_iterable(combinations(s, r) for r in range(len(s)+1))
 
+def valid_number(v):
+  return v is not None and v != -inf and not(math.isnan(v)) and v != inf
 
 
 class LinearFit(object):
