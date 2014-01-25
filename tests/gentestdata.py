@@ -47,12 +47,11 @@ def get_test_data(name, **kwargs):
         cmd = 'testdata = get_%s()' % name
         exec(cmd)
 
-    sql, badresults, goodresults, get_ground_truth = tuple(testdata[:4])
-    if len(testdata) > 4:
-        errtype = testdata[-1]
-    else:
-        errtype = ErrTypes.TOOHIGH
-    
+    if len(testdata) != 6:
+      raise RuntimeException("expected 6 results")
+
+    sql, badresults, goodresults, get_ground_truth, errtype, tablename = tuple(testdata)
+
     if 'intel' in name:
         dbname = 'intel'
     elif 'harddata' in name:
@@ -69,7 +68,7 @@ def get_test_data(name, **kwargs):
     nbadresults = kwargs.get('nbadresults', len(badresults))
     badresults = badresults[:nbadresults]
 
-    return dbname, sql, badresults, goodresults, errtype, get_ground_truth
+    return dbname, sql, badresults, goodresults, errtype, get_ground_truth, tablename
 
 
 
@@ -87,7 +86,7 @@ def get_intel_noon():
 
     def get_ground_truth(table):
         return [row['id'].value for row in table if row['temp'].value > 50]
-    return sql, badresults, goodresults, get_ground_truth
+    return sql, badresults, goodresults, get_ground_truth, ErrTypes.TOOHIGH, 'readings'
 
 def get_intel_corr():
     sql = """SELECT corr(temp, voltage), ((extract(epoch from date+time - '2004-3-1'::timestamp)) / (30*60)) :: int as dist FROM readings WHERE date+time > '2004-3-1'::timestamp and date+time < '2004-3-7'::timestamp and moteid < 100 GROUP BY dist ORDER BY dist"""
@@ -97,7 +96,7 @@ def get_intel_corr():
 
     def get_ground_truth(table):
         return [row['id'].value for row in table if int(row['moteid']) > 100 or row['temp'] >= 60]
-    return sql, badresults, goodresults, get_ground_truth, ErrTypes.TOOLOW
+    return sql, badresults, goodresults, get_ground_truth, ErrTypes.TOOLOW, 'readings'
 
     
 def get_intel_mote18():
@@ -117,7 +116,7 @@ def get_intel_mote18():
                    340, 341, 344, 345, 346, 347, 348, 349, 350]
     def get_ground_truth(table):
         return [row['id'].value for row in table if row['temp'].value > 50]#str(row['moteid'].value) == '18']
-    return sql, badresults, goodresults, get_ground_truth
+    return sql, badresults, goodresults, get_ground_truth, ErrTypes.TOOHIGH, 'readings'
 
 def get_intel_first_spike():
     sql = """SELECT stddev(temp),
@@ -148,7 +147,7 @@ def get_intel_first_spike():
 
     def get_ground_truth(table):
         return [row['id'].value for row in table if row['temp'].value > 50]
-    return sql, badresults, goodresults, get_ground_truth
+    return sql, badresults, goodresults, get_ground_truth, ErrTypes.TOOHIGH, 'readings'
     
 def get_intel_mass_failures():
     sql = """SELECT stddev(temp), ((extract(epoch from date+time - '2004-3-1'::timestamp)) / (30*60)) :: int as dist
@@ -180,7 +179,7 @@ def get_intel_mass_failures():
     goodresults = []
     def get_ground_truth(table):
         return [row['id'].value for row in table if row['temp'].value > 50] #< 2.4]
-    return sql, badresults, goodresults, get_ground_truth
+    return sql, badresults, goodresults, get_ground_truth, ErrTypes.TOOHIGH, 'readings'
 
 def get_intel_low_voltage():
     sql = """SELECT avg(temp), stddev(temp), date_trunc('hour',(date) + (time)) as dt
@@ -194,7 +193,7 @@ def get_intel_low_voltage():
 
     def get_ground_truth(table):
         return [row['id'].value for row in table if row['temp'].value > 50] #< 2.4]
-    return sql, badresults, goodresults, get_ground_truth
+    return sql, badresults, goodresults, get_ground_truth, ErrTypes.TOOHIGH, 'readings'
 
 
 def get_fec12_obama():
@@ -209,7 +208,7 @@ def get_fec12_obama():
     def get_ground_truth(table):
         return [row['id'].value for row in table if row['disb_amt'].value > 1500000]
 #    if 'GMMB' in row.domain['recipient_nm'].values[int(row['recipient_nm'])]] # 
-    return sql, badresults, goodresults, get_ground_truth
+    return sql, badresults, goodresults, get_ground_truth, ErrTypes.TOOHIGH, 'expenses'
 
 
 
@@ -220,7 +219,7 @@ def get_harddata1_avg():
 
     def get_ground_truth(table):
         return [row['id'].value for row in table if row['v'] > 50]
-    return sql, badresults, goodresults, get_ground_truth, ErrTypes.TOOHIGH
+    return sql, badresults, goodresults, get_ground_truth, ErrTypes.TOOHIGH, 'harddata_1'
 
 def get_harddata1_skewed():
     sql = """select (avg(x) - avg(y)), z from harddata_1 group by z"""
@@ -229,7 +228,7 @@ def get_harddata1_skewed():
 
     def get_ground_truth(table):
         return [row['id'].value for row in table if row['x'] - row['y'] > 40]
-    return sql, badresults, goodresults, get_ground_truth, ErrTypes.TOOHIGH
+    return sql, badresults, goodresults, get_ground_truth, ErrTypes.TOOHIGH, 'harddata_1'
 
 def get_harddata1_sum():
     sql = """select sum(v + 105), z from harddata_1 group by z"""
@@ -238,7 +237,7 @@ def get_harddata1_sum():
 
     def get_ground_truth(table):
         return [row['id'].value for row in table if row['x'] - row['y'] > 40]
-    return sql, badresults, goodresults, get_ground_truth, ErrTypes.TOOHIGH
+    return sql, badresults, goodresults, get_ground_truth, ErrTypes.TOOHIGH, 'harddata_1'
 
 
 def get_harddata1_std():
@@ -248,7 +247,7 @@ def get_harddata1_std():
 
     def get_ground_truth(table):
         return [row['id'].value for row in table if abs(row['v']) > 10]
-    return sql, badresults, goodresults, get_ground_truth, ErrTypes.TOOHIGH
+    return sql, badresults, goodresults, get_ground_truth, ErrTypes.TOOHIGH, 'harddata_1'
 
 
 def get_harddata2_avg():
@@ -258,7 +257,7 @@ def get_harddata2_avg():
 
     def get_ground_truth(table):
         return [row['id'].value for row in table if row['v'] > 50]
-    return sql, badresults, goodresults, get_ground_truth, ErrTypes.TOOHIGH
+    return sql, badresults, goodresults, get_ground_truth, ErrTypes.TOOHIGH, 'harddata_2'
 
 
 def get_harddata3_avg():
@@ -268,7 +267,7 @@ def get_harddata3_avg():
 
     def get_ground_truth(table):
         return [row['id'].value for row in table if row['v'] > 50]
-    return sql, badresults, goodresults, get_ground_truth, ErrTypes.TOOHIGH
+    return sql, badresults, goodresults, get_ground_truth, ErrTypes.TOOHIGH, 'harddata_3'
 
 def get_harddata4_sum():
     sql = """select sum(val), iter from multdim group by iter"""
@@ -277,7 +276,7 @@ def get_harddata4_sum():
 
     def get_ground_truth(table):
         return [row['id'].value for row in table if row['val'] >= 40]
-    return sql, badresults, goodresults, get_ground_truth, ErrTypes.TOOHIGH
+    return sql, badresults, goodresults, get_ground_truth, ErrTypes.TOOHIGH, 'multdim'
 
 
 
@@ -290,7 +289,7 @@ def get_intel_foo():
 
     def get_ground_truth(table):
         return [row['id'].value for row in table if row['temp'] > 50]
-    return sql, badresults, [], get_ground_truth, ErrTypes.TOOHIGH
+    return sql, badresults, [], get_ground_truth, ErrTypes.TOOHIGH, 'readings'
 
 def get_fec12_donation():
     sql = """SELECT avg(contb_receipt_amt), contb_receipt_dt as contb_receipt_dt FROM donations GROUP BY contb_receipt_dt"""
@@ -299,7 +298,7 @@ def get_fec12_donation():
  
     def get_ground_truth(table):
         return [row['id'].value for row in table if row['contb_receipt_amt'].value > 1500]
-    return sql, badresults, goodresults, get_ground_truth
+    return sql, badresults, goodresults, get_ground_truth, 'donations'
 
 
 def get_fec12_donation2():
@@ -309,7 +308,7 @@ def get_fec12_donation2():
 
     def get_ground_truth(table):
         return [row['id'].value for row in table if row['contb_receipt_amt'].value > 1500]
-    return sql, badresults[:2], goodresults[:2], get_ground_truth
+    return sql, badresults[:2], goodresults[:2], get_ground_truth, ErrTypes.TOOHIGH,  'donations'
 
 
 def get_sigmod_data(fname):
@@ -322,7 +321,7 @@ def get_sigmod_data(fname):
 
     def get_ground_truth(table):
         return [row['id'].value for row in table if row['v'].value > 20]
-    return sql, badresults, goodresults, get_ground_truth
+    return sql, badresults, goodresults, get_ground_truth, ErrTypes.TOOHIGH,  fname
 
 
 if __name__ == '__main__':

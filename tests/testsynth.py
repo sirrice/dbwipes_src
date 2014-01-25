@@ -16,7 +16,7 @@ import numpy as np
 
 from sqlalchemy import *
 from common import *
-from test import init_db
+from setup_experiments import init_db
 from util import get_logger
 from misc.gensinglecluster import gen_points, in_box
 
@@ -26,12 +26,12 @@ random.seed(0)
 format_list = lambda fmt, l: [fmt % (isinstance(p, list) and tuple(p) or p) for p in l]
 
 
-def generate_datasets(db, ndim, uo=30):
+def generate_datasets(db, ndim, uo=30, npts=2000):
     random.seed(0)
     """
     generates the 2/3/4-d datasets and stores them in db: sigmod
     """
-    mid_box, high_box, schema, generator = gen_points(2000, ndim, ndim, 0.25, 10, 10, uo, 10)
+    mid_box, high_box, schema, generator = gen_points(npts, ndim, ndim, 0.25, 10, 10, uo, 10)
     pts = [pt for pt in generator]
     c_mid, c_high = compute_c_values(pts, mid_box, high_box)
 
@@ -40,7 +40,7 @@ def generate_datasets(db, ndim, uo=30):
     id = add_config(db, tablename, 2000, ndim, ndim, 0.25, 10, 10, uo, 10, mid_box, high_box, c_high)
 
     # save the damn thing
-    #save_pts(db, tablename, pts)
+    save_pts(db, tablename, pts)
     
 
 def setup(db):
@@ -129,82 +129,86 @@ def get_pts(db, tablename):
 
 
 def compute_c_values(pts, mid_bounds, high_bounds, f=np.mean):
-    orig_f = f
-    f = lambda pts: orig_f([pt[-1] for pt in pts])
-    pts = set(map(tuple,pts))
-    all_vs, mid_vs, high_vs = set(), set(), set()
-    n_mid, n_high = 0, 0
-    for pt in pts:
-        if pt[-2] != 8:
-            continue
-        all_vs.add(pt)
-        if in_box(pt[:-2], mid_bounds):
-            mid_vs.add(pt)
-        if in_box(pt[:-2], high_bounds):
-            high_vs.add(pt)
+  """
+  @deprecated don't use
+  """
+  return 0, 1
+
+  orig_f = f
+  f = lambda pts: orig_f([pt[-1] for pt in pts])
+  pts = set(map(tuple,pts))
+  all_vs, mid_vs, high_vs = set(), set(), set()
+  n_mid, n_high = 0, 0
+  for pt in pts:
+      if pt[-2] != 8:
+          continue
+      all_vs.add(pt)
+      if in_box(pt[:-2], mid_bounds):
+          mid_vs.add(pt)
+      if in_box(pt[:-2], high_bounds):
+          high_vs.add(pt)
 
 
-    orig = f(all_vs)
-    nomid = f(all_vs.difference(mid_vs))
-    nohigh = f(all_vs.difference(high_vs))
+  orig = f(all_vs)
+  nomid = f(all_vs.difference(mid_vs))
+  nohigh = f(all_vs.difference(high_vs))
 
-    dm = orig - nomid
-    dh = orig - nohigh
+  dm = orig - nomid
+  dh = orig - nohigh
 
-    cm = len(mid_vs)
-    ch = len(high_vs)
-    
-    highc = math.log(dh / dm) / math.log(1.*ch/cm)
-    
-    stats = []
-    for c in xrange(0, 50, 5):
-        c = c / 100.
-        minfs, hinfs = [], []
-        for n in xrange(5000):
-            mid_samp = random.sample(mid_vs.difference(high_vs), random.randint(1, 100))
-            high_samp = random.sample(high_vs, random.randint(1, 100))
-            mix_samp = mid_samp + high_samp
-            dm = orig - f(all_vs.difference(mix_samp)) 
-            dh = orig - f(all_vs.difference(high_samp))
-            ch, cm = float(len(high_samp)), float(len(mix_samp))
-            if dh <= 0 or dm <= 0 or dh == dm or ch == cm:
-                continue
+  cm = len(mid_vs)
+  ch = len(high_vs)
+  
+  highc = math.log(dh / dm) / math.log(1.*ch/cm)
+  
+  stats = []
+  for c in xrange(0, 50, 5):
+      c = c / 100.
+      minfs, hinfs = [], []
+      for n in xrange(5000):
+          mid_samp = random.sample(mid_vs.difference(high_vs), random.randint(1, 100))
+          high_samp = random.sample(high_vs, random.randint(1, 100))
+          mix_samp = mid_samp + high_samp
+          dm = orig - f(all_vs.difference(mix_samp)) 
+          dh = orig - f(all_vs.difference(high_samp))
+          ch, cm = float(len(high_samp)), float(len(mix_samp))
+          if dh <= 0 or dm <= 0 or dh == dm or ch == cm:
+              continue
 
-            minfs.append(dm / cm**c)
-            hinfs.append(dh / ch**c)
+          minfs.append(dm / cm**c)
+          hinfs.append(dh / ch**c)
 
-        mmean, mstd = np.mean(minfs), np.std(minfs)
-        hmean, hstd = np.mean(hinfs), np.std(hinfs)
-        stats.append((c, mmean, mstd, hmean, hstd))
-        print ('\t%.4f'*5) % stats[-1]
-    return 0, 1
-    return highc - .25*np.std(highcs), highc + .25*np.std(highcs)
+      mmean, mstd = np.mean(minfs), np.std(minfs)
+      hmean, hstd = np.mean(hinfs), np.std(hinfs)
+      stats.append((c, mmean, mstd, hmean, hstd))
+      print ('\t%.4f'*5) % stats[-1]
+  return highc - .25*np.std(highcs), highc + .25*np.std(highcs)
 
-    return highc
+  return highc
 
 def save_result(db, total_cost, costs, stats, rule, ids, dataset, notes, kwargs):
-    acc, p, r, f1 = stats
-    ids_str = ','.join(map(str, ids))
-    isbest = rule.isbest
-    vals = [0, dataset, notes]
-    pkeys = ['klassname', 'cols', 'epsilon', 'c', 'lambda', 'boundtype']
-    vals.extend([kwargs.get(key, None) for key in pkeys])
-    vals.extend((total_cost, acc, p, r, f1, rule.quality, isbest, str(rule), ids_str))
-    stat = vals
+  acc, p, r, f1 = stats
+  ids_str = ','.join(map(str, ids))
+  isbest = rule.isbest
+  vals = [0, dataset, notes]
+  pkeys = ['klassname', 'cols', 'epsilon', 'c', 'lambda', 'boundtype']
+  vals.extend([kwargs.get(key, None) for key in pkeys])
+  vals.extend((total_cost, acc, p, r, f1, rule.quality, isbest, str(rule), ids_str))
+  stat = vals
 
 
-    with db.begin() as conn:
-        q = """insert into stats(expid, dataset, notes, klass, cols, epsilon, c,     
-                                 lambda, boundtype, cost, acc, prec, recall, f1, score, 
-                                 isbest, rule, ids) values(%s) returning id""" % (','.join(['%s']*len(stat)))
-        sid = conn.execute(q, *stat).fetchone()[0]
+  with db.begin() as conn:
+      q = """insert into stats(expid, dataset, notes, klass, cols, epsilon, c,     
+                                lambda, boundtype, cost, acc, prec, recall, f1, score, 
+                                isbest, rule, ids) values(%s) returning id""" % (','.join(['%s']*len(stat)))
+      sid = conn.execute(q, *stat).fetchone()[0]
 
-        q = """insert into costs(sid, name, cost) values(%s,%s,%s)"""
-        for name, cost in costs.items():
-            if isinstance(cost, list):
-                cost = cost[0]
-            conn.execute(q, sid, name, cost)
-        return sid
+      q = """insert into costs(sid, name, cost) values(%s,%s,%s)"""
+      for name, cost in costs.items():
+          if isinstance(cost, list):
+              cost = cost[0]
+          conn.execute(q, sid, name, cost)
+      return sid
 
 
 
@@ -281,8 +285,6 @@ def run(sigmoddb, statsdb, tablename, all_bounds, **kwargs):
                     save_result(statsdb, timein, {}, stats, rule, chk_ids, tablename, str(bounds), params)
         print "done"
     else:
-        if klassname != 'BDT':
-            params['use_mtuples'] = False
         for c in cs:
             params['c'] = c
             print "running experiment"
@@ -301,6 +303,10 @@ def run(sigmoddb, statsdb, tablename, all_bounds, **kwargs):
 
 def run_tests(sigmoddb, statsdb, **params):
     """
+    These recreate the synthetic tests that use 2k pts per group, and 
+    vary dimensionality and easy vs hard.  These are all graphs
+    section 8.3 except figures 15 and 16
+
     defaults: 
      epsilon: 0.001
      tau: [0.1, 0.5]
@@ -321,7 +327,7 @@ def run_tests(sigmoddb, statsdb, **params):
             cs = reversed([0., 0.05, 0.075, 0.09, 0.1, 0.15, 0.2, 0.5])
             #cs = [0.5, 0.2]
 
-            for klass in [MR]:
+            for klass in [Naive, BDT, MR]:
                 run(sigmoddb, statsdb, tablename, all_bounds, cs=cs, klass=klass, **params)
 
 statsdb = create_engine('postgresql://localhost/dbwipes')
@@ -330,19 +336,25 @@ init_db(statsdb)
 
 
 
-#for dataset in ['0', '11']:
-#    for klass in [MR,BDT,NDT]:
-#        run(sigmoddb, statsdb, dataset, [(None, 'none')], cs=[0,0.05,0.075,0.09,0.1,0.15,0.2,0.5], klass=klass, granularity=15, use_mtuples=True, use_cache=False)
-#exit()
+for dataset in ['0', '11']:
+    for klass in [MR,BDT,NDT]:
+        run(sigmoddb, statsdb, dataset, [(None, 'none')], 
+            cs=[0,0.05,0.075,0.09,0.1,0.15,0.2,0.5], 
+            klass=klass, 
+            granularity=15, 
+            use_mtuples=True, 
+            use_cache=False
+        )
+exit()
 
-tablename = 'data_2_30'
-config = get_config(sigmoddb, tablename)
-pts = get_pts(sigmoddb, tablename)
-run_tests(sigmoddb, statsdb, max_wait=12*60, granularity=15, use_mtuples=True, use_cache=False)
+#tablename = 'data_2_30'
+#config = get_config(sigmoddb, tablename)
+#pts = get_pts(sigmoddb, tablename)
+#run_tests(sigmoddb, statsdb, max_wait=12*60, granularity=15, use_mtuples=True, use_cache=False)
 
 if False:
     setup(sigmoddb)
-    for uo in [30, 40, 50, 60, 70, 80, 90, 100]:
+    for uo in [30, 80]:#40, 50, 60, 70, 80, 90, 100]:
         generate_datasets(sigmoddb, 2, uo=uo)
         generate_datasets(sigmoddb, 3, uo=uo)
         generate_datasets(sigmoddb, 4, uo=uo)

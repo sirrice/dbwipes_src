@@ -26,7 +26,7 @@ def get_row_ids(r, table):
 
 def get_tuples_in_bounds(db ,tablename, bounds, additional_where=''):
     with db.begin() as conn:
-        where = ['%f <= a%d and a%d <= %f' % (minv, i, i, maxv) for i, (minv, maxv) in enumerate(map(tuple, bounds))]
+        where = ['%f <= a_%d and a_%d <= %f' % (minv, i, i, maxv) for i, (minv, maxv) in enumerate(map(tuple, bounds))]
         if additional_where:
             where.append(additional_where)
         where = ' and '.join(where)
@@ -36,11 +36,15 @@ def get_tuples_in_bounds(db ,tablename, bounds, additional_where=''):
 
 
 def get_ids_in_bounds(db ,tablename, bounds):
-    with db.begin() as conn:
-        where = ['%f <= a%d and a%d <= %f' % (minv, i, i, maxv) for i, (minv, maxv) in enumerate(map(tuple, bounds))]
-        where = ' and '.join(where)
-        q = """ select id from %s where %s""" % (tablename, where)
-        return [int(row[0]) for row in conn.execute(q)]
+  """
+  Given a synthetic tablename and bounds of the form [ [min1, max1], ... ]
+  Return the ids of the records that match
+  """
+  with db.begin() as conn:
+      where = ['%f <= a_%d and a_%d <= %f' % (minv, i, i, maxv) for i, (minv, maxv) in enumerate(map(tuple, bounds))]
+      where = ' and '.join(where)
+      q = """ select id from %s where %s""" % (tablename, where)
+      return [int(row[0]) for row in conn.execute(q)]
 
 
 
@@ -83,16 +87,14 @@ def get_parameters(datasetidx, **kwargs):
     outname = name
 
     test_data = get_test_data(name)
-    dbname, sql, badresults, goodresults, errtype, get_ground_truth = test_data
-    get_ground_truth = test_data[-1]
-    obj, table = create_sharedobj(*test_data[:-1])
+    dbname, sql, badresults, goodresults, errtype, get_ground_truth, tablename = test_data
+    obj, table = create_sharedobj(*test_data[:-2])
     aggerr = obj.errors[0]
 
     # retrieve table for each good and bad key
     obj.db = connect(dbname)
     bad_tables = get_provenance_split(obj, aggerr.agg.cols, aggerr.keys) or []
     good_tables = get_provenance_split(obj, aggerr.agg.cols, obj.goodkeys[aggerr.agg.shortname]) or []
-    obj.db.close()
 
     (bad_tables, good_tables), full_table = reconcile_tables(bad_tables, good_tables)
     #_, full_table = reconcile_tables(bad_tables)
@@ -135,6 +137,7 @@ def get_rules(full_table, bad_tables, good_tables, **kwargs):
     #merged = [r.simplify() for r in merged]
 
     cost = cost - costs.get('merge_load_from_cache',(0,))[0] - costs.get('merge_cache_results', (0,))[0]
+    costs['cost_merge'] = costs.get('cost_merge', 0) - (costs.get('merge_load_from_cache',(0,))[0] + costs.get('merge_cache_results', (0,))[0])
     costs['cost_total'] = cost
     return costs, merged, learner
 
