@@ -129,8 +129,8 @@ class AdjacencyGraph(object):
         for idx, c in enumerate(clusters):
             for n in self.search_rtree(c):
                 if self.c2id[n] <= idx: continue
-                if not c.adjacent(n, 0.8): continue
                 if c.discretes_contains(n) and box_completely_contained(c.bbox, n.bbox): continue
+                if not c.adjacent(n, 0.8): continue
                 self.graph[c].add(n)
                 self.graph[n].add(c)
 
