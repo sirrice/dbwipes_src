@@ -12,9 +12,12 @@ from collections import defaultdict
 from operator import sub
 
 from util.prob import *
+from util.misc import valid_number
 from bounding_box import *
 from learners.cn2sd.rule import SDRule
 
+nan = float('nan')
+inf = float('inf')
 
 
 class Cluster(object):
@@ -40,6 +43,17 @@ class Cluster(object):
         self.good_inf = None
         self.mean_inf = None
         self.idxs = []
+
+        # influence components (delta and counts)
+        self.bds = None
+        self.bcs = None
+        self.gds = None
+        self.gcs = None
+        self.mean_bd = None  # this is a dirty hack not
+        self.mean_bc = None  # provably correct
+        self.mean_gd = None
+        self.mean_gc = None
+        self.inf_range = None
 
         self.states = []
         self.cards = []
@@ -151,11 +165,24 @@ class Cluster(object):
 
     @staticmethod
     def merge(c1, c2, intersecting_clusters, min_volume):
+        """
+        Computes the cluster after merging c1 and c2
+
+        If intersecting clusters is not empty, computes a
+        weighed estimated error based on the intersecting clusters
+        """
         if c1.cols != c2.cols:
             raise RuntimeError("columns do not match!  %s vs %s" % (str(c1.cols), str(c2.cols)))
         
+        # Compute the new cluster
         newbbox = bounding_box(c1.bbox, c2.bbox)
+        discretes = defaultdict(set)
+        for k in chain(c1.discretes.keys(), c2.discretes.keys()):
+            discretes[k].update(c1.discretes.get(k, ()))
+            discretes[k].update(c2.discretes.get(k, ()))
 
+
+        # compute new error
         weights = []
         errors = []
         for intersection in intersecting_clusters:
@@ -166,11 +193,6 @@ class Cluster(object):
         total_weight = sum(weights) or 1.
         if not total_weight:
             return None
-
-        discretes = defaultdict(set)
-        for k in chain(c1.discretes.keys(), c2.discretes.keys()):
-            discretes[k].update(c1.discretes.get(k, ()))
-            discretes[k].update(c2.discretes.get(k, ()))
 
         newerror = sum(e*w for e,w in zip(errors, weights)) / total_weight
         return Cluster(newbbox, newerror, c1.cols, parents=(c1, c2), discretes=discretes)
@@ -394,11 +416,15 @@ class Cluster(object):
         return hash(self) == hash(o)
 
 
+def filter_bad_clusters(clusters):
+  f = lambda c: c and valid_number(c.error)
+  return filter(f, clusters)
 
 def compute_clusters_threshold(clusters, nstds=1.):
     if not clusters:
         return 0.
     errors = [c.error for c in clusters]
+    return np.percentile(errors, 90)
     npts = [c.npts for c in clusters]
     #npts = [1] * len(clusters)
     mean, std = wmean(errors, npts), wstd(errors, npts)        
