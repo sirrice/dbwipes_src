@@ -68,29 +68,30 @@ def get_provenance(sharedobj, cols, keys):
 
 
 def get_provenance_split(sharedobj, cols, keys):
+    gb = sharedobj.parsed.select.nonaggs[0]
     schema = sharedobj.rules_schema
     schema.update(cols)
     schema = list(schema)
-
-    gb = sharedobj.parsed.select.nonaggs[0]
     schema.append(str(gb))
     #_logger.debug( "get_provenance schema\t%s", schema)
 
     
     rows = sharedobj.get_tuples(keys, attrs=schema)
-    if not len(rows):
-        return None
+    if not len(rows): return None
+    rows = remove_bad_rows(rows, schema)
 
-
+ 
     idxs = np.zeros(len(rows))
     for rid, row in enumerate(rows):
-        if row[-1] in keys:
-            idxs[rid] = keys.index(row[-1])
-        row.pop()
+      if row[-1] in keys:
+        idxs[rid] = keys.index(row[-1])
+      row.pop()
     schema.pop()
 
 
+
     table = create_orange_table(rows, schema, [], rm_id_col=False)
+
     for row in table:
         row[ERROR_VAR] = '1'
 
@@ -107,23 +108,32 @@ def get_provenance_split(sharedobj, cols, keys):
 
 
 def extract_agg_vals(vals):
-    try:
-        ret = [datetime.strptime(val, '%Y-%m-%dT%H:%M:%S.%fZ')
-               for val in vals]
+    fmts = [
+      '%Y-%m-%dT%H:%M:%S.%fZ',
+      '%Y-%m-%dT%H:%M:%S.%f',
+      '%Y-%m-%dT%H:%M:%S',
+      '%Y-%m-%dT%H:%M',
+      '%Y-%m-%dT%H'
+    ]
+    for fmt in fmts:
+      try:
+        ret = [datetime.strptime(val, fmt) for val in vals]
         print vals
         if len(set([(d.hour, d.minute, d.second) for d in ret])) == 1:
-            ret = [d.date() for d in ret]
+          ret = [d.date() for d in ret]
         else:
-            ret = [d - timedelta(hours=5) for d in ret] # compensate for 'Z' +4 timezone
+          ret = [d - timedelta(hours=5) for d in ret] # compensate for 'Z' +4 timezone
 
         return ret
-    except Exception as e:
-      try:
-        ret = [datetime.strptime(val, '%Y-%m-%d').date() for val in vals]
-        return ret
-      except Exception as ee:
-        print ee
-        return vals
+      except Exception as e:
+        pass
+
+    try:
+      ret = [datetime.strptime(val, '%Y-%m-%d').date() for val in vals]
+      return ret
+    except Exception as ee:
+      print ee
+      return vals
 
 
 
@@ -192,7 +202,6 @@ def create_sharedobj(dbname, sql, badresults, goodresults, errtype, bad_tuple_id
     obj.errors = errors
 
     table = get_provenance(obj, obj.errors[0].agg.cols, obj.errors[0].keys)
-    db.close()
     return obj, table
 
 
@@ -323,6 +332,7 @@ class SharedObj(object):
         # 0 and column_name != 'humidity'
         for row in query(db, q, (table,)):
             name, dtype = tuple( row[:2] )
+            name = str(name)
             for tn, tt in typedict:
                 if tn in dtype:
                     ret[name] = tt
@@ -371,27 +381,20 @@ def create_clauses(sharedobj):
     Convert clauses into SQL predicate strings
     """
     def filter_clause(clause):
-        if not clause:
-            return False
-        if len(clause) > 1000:
-            _logger.warn( "clause too long\t%d", len(clause))
-            return False
-        return True
+      if not clause:
+          return False
+      if len(clause) > 1000:
+          _logger.warn( "clause too long\t%d", len(clause))
+          return False
+      return True
 
     for label, rules in sharedobj.rules.iteritems():
-        rules = map(lambda p: p[0], rules)
-        clauses = map(lambda rule:
-                     ' or '.join(rule_to_clauses(rule)),
-                     rules)
-        
-        ##_logger.debug("#clauses pre  dedup %d", len(clauses))
-        #clauses = rm_dups(clauses, key=hash)
-        ##_logger.debug( "#clauses post dedup %d", len(clauses))
-        #clauses = filter(filter_clause, clauses)
-        ##_logger.debug( "#clauses post filter %d", len(clauses))
-        ##clauses = clauses[:6]
-        #
-        sharedobj.clauses[label] = clauses
+      rules = map(lambda p: p[0], rules)
+      clauses = map(lambda rule:
+                    ' or '.join(rule_to_clauses(rule)),
+                    rules)
+      
+      sharedobj.clauses[label] = clauses
 
 def score_rule(rule, data):
     """
@@ -421,10 +424,24 @@ def score_rule(rule, data):
 
 
 
-def is_discrete(col):
+def is_discrete(attr, col):
+    if attr in [
+        'epochid', 'voltage', 'xloc', 'yloc', 
+        'est', 'height', 'width', 'atime', 'v', 'light', 'humidity',
+        'age']:
+        return False
+    if attr in ['recipient_zip', 'moteid', 'file_num']:
+        return True
+
+    # continuous or discrete?
+    # uniquecol = set(col)
+    # nonnulls = filter(lambda x:x, col)
+    # strtypes = map(lambda c: isinstance(c, str), nonnulls[:20])
+    # istypestr = reduce(operator.or_, strtypes) if strtypes else True
+
     # if its strings
     nonnulls = filter(lambda x:x, col)
-    strtypes = map(lambda c: isinstance(c, str), nonnulls[:20])
+    strtypes = map(lambda c: isinstance(c, basestring), nonnulls[:20])
     istypestr = reduce(operator.or_, strtypes) if strtypes else True
     if istypestr:
         return True
@@ -445,54 +462,71 @@ def is_discrete(col):
 
     return True
 
+def detect_discrete_cols(rows, attrs):
+    attrs = list(attrs)
+    cols = map(list, zip(*rows))
+    dcols = []
+    for idx, (attr, col) in enumerate(zip(attrs, cols)):
+      if is_discrete(attr, col):
+        dcols.append(attr)
+    return dcols
+
+def remove_bad_rows(rows, attrs):
+    bad_attrs = ['moteid']
+    attrs = list(attrs)
+    bad_row_ids = set()
+    cols = map(list, zip(*rows))
+    dcols = []
+    for idx, (attr, col) in enumerate(zip(attrs, cols)):
+      if attr not in bad_attrs: continue
+      if is_discrete(attr, col):
+        for rowidx, v in enumerate(col):
+          if v is None or v is 'None':
+            bad_row_ids.add(rowidx)
+    rows = [row for idx, row in enumerate(rows) if idx not in bad_row_ids]
+    return rows
+
+
+
 def create_orange_table(rows, attrs, errids, rm_id_col=True):
     errids = set(errids)
     attrs = list(attrs)
     eidx = attrs.index('id')
 
     # orngDisc.orngDisc.entropyDiscretization('')
-
     cols = map(list, zip(*rows))
     features = []
     for idx, (attr, col) in enumerate(zip(attrs, cols)):
-        # continuous or discrete?
-        # uniquecol = set(col)
-        # nonnulls = filter(lambda x:x, col)
-        # strtypes = map(lambda c: isinstance(c, str), nonnulls[:20])
-        # istypestr = reduce(operator.or_, strtypes) if strtypes else True
-        bdiscrete = is_discrete(col)
-        if attr in ['epochid', 'voltage', 'xloc', 'yloc', 'est', 'height', 'width', 'atime', 'v', 'light', 'humidity']:
-            bdiscrete = False
-        if attr in ['recipient_zip', 'moteid', 'file_num']:
-            bdiscrete = True
+      bdiscrete = is_discrete(attr, col)
 
-        if bdiscrete:
-            #_logger.debug( "create_table: discrete:\t%s", attr)
-            feature = Orange.feature.Discrete(attr, values=map(str, set(col)))
-        else:
-            #_logger.debug( "create_table: continuous:\t%s", attr)
-            try:
-                for ridx in xrange(len(col)):
-                    if col[ridx] is None:
-                        col[ridx] = 0.
-                    else:
-                        col[ridx] = float(col[ridx])
-            except:
-                print "error creating orange table on col", attr
-                print col[ridx]
-                print rows[ridx]
-                print col[idx], filter(lambda x:x,col)[:10]
-                print idx
-                raise
-            feature = Orange.feature.Continuous(attr)
-        features.append(feature)
+      if bdiscrete:
+        #_logger.debug( "create_table: discrete:\t%s", attr)
+        feature = Orange.feature.Discrete(attr, values=map(str, set(col)))
+      else:
+        #_logger.debug( "create_table: continuous:\t%s", attr)
+        try:
+          for ridx in xrange(len(col)):
+            if col[ridx] is None:
+              col[ridx] = 0.
+            else:
+              col[ridx] = float(col[ridx])
+        except:
+          print "error creating orange table on col", attr
+          print col[ridx]
+          print rows[ridx]
+          print col[idx], filter(lambda x:x,col)[:10]
+          print idx
+          pdb.set_trace()
+          raise
+        feature = Orange.feature.Continuous(attr)
+      features.append(feature)
 
     # convert discrete columns into str, continuous cols into float
     for idx in xrange(len(features)):
-        if isinstance(features[idx], Orange.feature.Discrete):
-            cols[idx] = map(str, cols[idx])
-        else:
-            cols[idx] = map(float, cols[idx])
+      if isinstance(features[idx], Orange.feature.Discrete):
+          cols[idx] = map(str, cols[idx])
+      else:
+          cols[idx] = map(float, cols[idx])
     
 
     # add error column
@@ -531,13 +565,13 @@ def merge_tables(tables):
 
 def rule_to_clauses(rule):
     try:
-        return tree_to_clauses(rule.tree)
+        return sdrule_to_clauses(rule)
     except:
         try:
             return c45_to_clauses(rule.tree)
         except:
             try:
-                return sdrule_to_clauses(rule)
+              return tree_to_clauses(rule.tree)
             except:
                 pass
     return []
@@ -552,7 +586,7 @@ def sdrule_to_clauses(rule):
         #                isinstance(c,  Orange.core.ValueFilter_continuous), attr.varType)
         if isinstance(c, Orange.core.ValueFilter_continuous):
             # XXX: rounding to the 3rd decimal place as a hack            
-            clause = []
+            clause = []#'%s is not null' % name]
             if c.min == c.max and c.min != -infinity:
                 v = math.floor(c.min * float(1e7)) / 1e7
                 vint = int(v)
@@ -571,6 +605,7 @@ def sdrule_to_clauses(rule):
                 val = attr.values[int(c.values[0])]
             else:
                 val = [attr.values[int(v)] for v in c.values]
+                val = filter(lambda v: v != None, val)
             ret.append( create_clause(name, val) )
 
 
@@ -676,6 +711,7 @@ def create_clause(attr, val, cmp='='):
                     val = quote_sql_str(val)
 
     return '%s %s %s' %  (attr, cmp, val)
+    #return '%s is not null and %s %s %s' %  (attr, attr, cmp, val)
 
         
 
