@@ -26,6 +26,10 @@ submit
 			<fieldset>
 
 
+        <div class="block" id="walkthrough-loading" style="display:none;">
+          loading...
+        </div>
+
 				<div class="block" id="walkthrough-0">
 					<div class='control-group'>
 						<label class="control-label" for="errortypes">
@@ -127,74 +131,78 @@ submit
 
 <script type="text/javascript">
 $("#errorbox").submit(function() {
-	if (global_state.bad_keys.length == 0) {
+	if (global_state.n_bad_keys() == 0) {
 		error("Please select 1+ points to debug!")
 		return false;
 	}
-	global_state.attrs = [];
-	$(".errattrs").get().forEach(function(d) {
-		if ($(d).attr("checked"))
-			global_state.attrs.push($(d).val())
-	})
-  try{
 
-    var errtype = false;
-    if (!errtype || errtype === undefined) {
-      // assume only one agrgegate
-      var yattr = labels.aggs[0];
 
-      var bad_keys = global_state.bad_keys;
-      var bad_vals = global_state.bad_keys.map(function(row) {
-        return row.get(yattr);
-      });
+  var form_bad_keys = {};
+  var form_good_keys = {};
 
-      var good_vals = null;
-      var good_keys = null;
-      if (global_state.good_keys.length > 0) {
-        good_keys = global_state.good_keys;
-        good_vals = global_state.good_keys.map(function(row) { 
+
+  _.each(labels.aggs, function(yattr) {
+    try{
+      var errtype = false;
+      if (!errtype || errtype === undefined) {
+        // assume only one agrgegate
+        //var yattr = labels.aggs[0];
+        if (!(yattr in global_state.bad_keys)) return;
+
+        var bad_keys = global_state.bad_keys[yattr];
+        var bad_vals = bad_keys.map(function(row) {
           return row.get(yattr);
         });
-      } else {
-        var bad_ids = global_state.bad_keys.map(function(row) { return row.id; });
-        good_keys = data.filter(function(row) {
-          return !_.contains(bad_ids, row.id);
-          })
-        
-        good_vals = good_keys.map(function(row) {
-          return row.get(yattr);
-        })
-        good_keys = _.sample(good_keys.all(), 10)
-      }
-    }
 
-    console.log(d3.mean(bad_vals));
-    console.log(d3.mean(good_vals));
-    var avgbad = d3.mean(bad_vals),
-      avggood = d3.mean(good_vals);
-    if (avgbad > avggood) {
-      errtype = "2";
-    } else if (avgbad < avggood) {
-      errtype = "3";
-    } else {
-      errtype = "0";
+        var good_vals = null;
+        var good_keys = null;
+        if ((yattr in global_state.good_keys) && global_state.good_keys[yattr].length > 0) {
+          good_keys = global_state.good_keys[yattr];
+          good_vals = good_keys.map(function(row) { 
+            return row.get(yattr);
+          });
+        } else {
+          var bad_ids = bad_keys.map(function(row) { return row.id; });
+          good_keys = data.filter(function(row) {
+            return !_.contains(bad_ids, row.id);
+            })
+          
+          good_vals = good_keys.map(function(row) {
+            return row.get(yattr);
+          })
+          good_keys = _.sample(good_keys.all(), 10)
+        }
+      }
+
+      console.log(d3.mean(bad_vals));
+      console.log(d3.mean(good_vals));
+      var avgbad = d3.mean(bad_vals),
+        avggood = d3.mean(good_vals);
+      if (avgbad > avggood) {
+        errtype = "2";
+      } else if (avgbad < avggood) {
+        errtype = "3";
+      } else {
+        errtype = "0";
+      }
+      console.log("setting errtype to " + errtype)
+      $("#errtype_"+errtype).attr("checked", true)
+
+      form_bad_keys[yattr] = bad_keys.map(function(row) { 
+        return row.get(labels.x);
+      });
+      form_good_keys[yattr] = good_keys.map(function(row) {
+        return row.get(labels.x);
+      });
+
+      
+    } catch(exception) {
+      console.log(exception.stack)
+      return false;
     }
-    console.log("setting errtype to " + errtype)
-    $("#errtype_"+errtype).attr("checked", true)
-  } catch(exception) {
-    console.log(exception.stack)
-    return false;
-  }
+  })
   
   
-  var form_bad_keys = {};
-  form_bad_keys[labels.aggs[0]] = bad_keys.map(function(row) { 
-    return row.get(labels.x);
-  });
-  var form_good_keys = {};
-  form_good_keys[labels.aggs[0]] = good_keys.map(function(row) {
-    return row.get(labels.x);
-  });
   global_state.attrs = [];
   $(".errattrs").get().forEach(function(d) {
     if(true || $(d).attr("checked")) {

@@ -18,7 +18,7 @@ app = Flask(__name__)
 
 @app.before_request
 def before_request():
-    dbname = request.form.get('db', 'fec12')
+    dbname = request.form.get('db', 'intel')
     g.db = connect(dbname)
     g.dbname = dbname
     g.tstamp = md5.md5(str(hash(datetime.now()))).hexdigest()
@@ -30,6 +30,19 @@ def teardown_request(exception):
         g.db.close()
     except:
         pass
+
+
+def run_sql_query(sql):
+  ret = []
+  res = g.db.execute(sql)
+  try:
+    keys = res.keys()
+    for row in res:
+      ret.append(dict(zip(keys, row)))
+  finally:
+    res.close()
+  dt_labels = find_datetime_labels(ret)
+  return ret
 
 
 def run_query(obj):
@@ -113,10 +126,10 @@ def intel_query():
         where = request.form.get('filter', '') 
 
         if not sql:
-            sql = """SELECT sum(disb_amt), disb_dt as day
-            FROM expenses
-            WHERE cand_id = 'P80003338' 
-            GROUP BY day; """
+            sql = """ SELECT avg(temp), stddev(temp), date_trunc('hour',date+time) as dt
+            FROM readings
+            WHERE date > '2004-3-5' and date < '2004-3-15'
+            GROUP BY dt; """
 
         obj = get_query_sharedobj(sql, delids)
         if where.strip():
@@ -158,21 +171,32 @@ def json_query():
     data_and_labels = {'data' : {}, 'labels' : {}}
     try:
         sql = request.form['query']
-        delids = json.loads(request.form.get('bad_tuple_ids', '{}')) # ids to delete
-        where = request.form.get('filter', '')
-        obj = get_query_sharedobj(sql, delids)
-        if where.strip():
-            obj.parsed.where.append(where)
-        print "/json/query.Final", str(obj.parsed)
-        data_and_labels = run_query(obj)
-
-        print data_and_labels['data'][:5]
-        
-        
+        #delids = json.loads(request.form.get('bad_tuple_ids', '{}')) # ids to delete
+        #where = request.form.get('filter', '')
+        #obj = get_query_sharedobj(sql, delids)
+        data = run_sql_query(sql)
     except Exception as e:
         import traceback
         traceback.print_exc()
-    return json.dumps(data_and_labels, default=json_handler)
+    return json.dumps({'data':data}, default=json_handler)
+
+#
+#
+
+
+
+#        if where.strip():
+#            obj.parsed.where.append(where)
+#        print "/json/query.Final", str(obj.parsed)
+#        data_and_labels = run_query(obj)
+#
+#        print data_and_labels['data'][:5]
+#        
+#        
+#    except Exception as e:
+#        import traceback
+#        traceback.print_exc()
+#    return json.dumps(data_and_labels, default=json_handler)
 
 
 @app.route('/json/filterq/', methods=["POST", "GET"])
@@ -224,7 +248,7 @@ def run_base_tuple_query(obj, keys):
     
 
 @app.route('/debug/', methods=["POST"])
-def intel_debug():
+def debug():
     context = dict(request.form.items())
     try:    
         if request.method == 'POST':
@@ -271,25 +295,25 @@ def intel_debug():
     return render_template('index.html', **context)
 
 def create_filter_options(obj):
+  filter_opts = defaultdict(list)
+  idx = 0
+  nrules = 6 
+  for label, clauses in obj.clauses.items():
+    rules = [p[0] for p in obj.rules[label]]
+    clauses = filter(lambda e:e.strip(), rm_dups(clauses, hash))
+    for rule, clause in zip(rules[:nrules], clauses[:nrules]):
+      # print "\t", clause
 
-    filter_opts = defaultdict(list)
-    idx = 0
-    for label, clauses in obj.clauses.items():
-        rules = [p[0] for p in obj.rules[label]]
-        clauses = filter(lambda e:e.strip(), rm_dups(clauses, hash))
-        for rule, clause in zip(rules[:10], clauses[:10]):
-            # print "\t", clause
+      tmpq = obj.parsed.clone()
+      cwhere = 'not (%s)' % clause 
+      tmpq.where.append(cwhere)
+      clause_parts = [c.strip() for c in str(rule).split(' and ')]
 
-            tmpq = obj.clone()
-            cwhere = 'not (%s)' % clause 
-            tmpq.add_where( cwhere )
-            clause_parts = [c.strip() for c in str(rule).split(' and ')]
+      equiv_clause_parts = map(lambda r: [c.strip() for c in str(r).split(' and ')], rule.cluster_rules)
 
-            equiv_clause_parts = map(lambda r: [c.strip() for c in str(r).split(' and ')], rule.cluster_rules)
-
-            filter_opts[label].append( (clause_parts, tmpq.sql, cwhere, json.dumps({}), equiv_clause_parts, idx) )
-            idx += 1
-    return filter_opts
+      filter_opts[label].append( (clause_parts, str(tmpq), cwhere, json.dumps({}), equiv_clause_parts, idx) )
+      idx += 1
+  return filter_opts
 
 
 

@@ -6,7 +6,7 @@
 
 <script type="text/javascript">
 var filter_click = (function() {
-  return function(clauseid, query, where, data, labels) {
+  return function(clauseid, query, where, data) {
     console.log("filter_click\t" + clauseid )
     $(".btn-clause").removeClass('btn-success');
     $("#clause_filter_" + clauseid + " pre").addClass('btn-success');
@@ -28,7 +28,7 @@ var clickedInfo = null;
 </div>
 <script type="text/javascript">
 	$("#clause_filter_orig").click(function(){
-		filter_click("orig",  global_state.original_query, "", data, labels);
+		filter_click("orig",  global_state.original_query, "", data);
 	});
 </script>
 
@@ -76,7 +76,7 @@ var clickedInfo = null;
               _labels = _resp.labels;
           clause.removeClass("filter-loading")
 					$("#aggplot .loading-text").text('rendering...');
-					filter_click(_idx, _query, _where, _data, _labels);
+					filter_click(_idx, _query, _where, _data);//, _labels);
 					$("#aggplot .loading-text").empty();
 				};
         var _info = {query: _query, idx: _idx, where: _where, cb: cb_func.bind(this)};
@@ -94,7 +94,7 @@ var clickedInfo = null;
                 clickedInfo.query, clickedInfo.idx, 
                 clickedInfo.where, clickedInfo.cb);
             } else {
-              filter_click("orig",  global_state.original_query, "", data, labels);
+              filter_click("orig",  global_state.original_query, "", data);//, labels);
             }
           });
         clause.click(function() {
@@ -108,7 +108,7 @@ var clickedInfo = null;
             $("#aggplot .loading-text").text('loading...');
             get_aggdata(_query, _idx, _where, cb_func);
           } else {
-            filter_click("orig",  global_state.original_query, "", data, labels);
+            filter_click("orig",  global_state.original_query, "", data);//, labels);
           }
         });
         clause.addClass("filter-loading");

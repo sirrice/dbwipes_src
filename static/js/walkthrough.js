@@ -22,7 +22,10 @@ var Walkthrough = function(opts) {
 	this.el.find("#sb_addbad")
 		.off()
 		.on('click', $.proxy(function(){
-			global_state.bad_keys = global_state.highlighted_keys.map(_.identity);
+      global_state.bad_keys = {};
+      _.each(global_state.highlighted_keys, function(keys, agg) {
+        global_state.bad_keys[agg] = keys.map(_.identity);
+      });
       $("#sb_addbad").toggleClass("clicked");
 			this.render();
 		}, this))
@@ -30,7 +33,10 @@ var Walkthrough = function(opts) {
 	this.el.find("#sb_addgood")
 		.off()
 		.on('click', $.proxy(function(){
-			global_state.good_keys = global_state.highlighted_keys.map(_.identity);
+      global_state.good_keys = {};
+      _.each(global_state.highlighted_keys, function(keys, agg) {
+        global_state.good_keys[agg] = keys.map(_.identity);
+      });
       $("#sb_addgood").toggleClass("clicked");
 			this.render();
 		}, this))
@@ -40,12 +46,18 @@ var Walkthrough = function(opts) {
 }
 
 _.extend(Walkthrough.prototype, Backbone.Events, {
+  loading: function() {
+    $("#walkthrough-loading").show();
+    $("#walkthrough-0").hide();
+  },
 
 	close: function() {
 		this.el.hide();
 	},
 	
 	render: function() {
+    $("#walkthrough-loading").hide();
+    $("#walkthrough-0").show();
     this.el.show();
     return;
 	}

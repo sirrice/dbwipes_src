@@ -3,11 +3,16 @@
 	<label class="control-label" for="dbname">Choose a Database</label>
 	<div class="controls">
 		<select id="dbselect" class="input-xlarge" name="db">
+			<option value="intel" {% if g.dbname == 'intel' %}selected="selected"{% endif %}>
+				Intel Sensor Dataset
+      </option>
 			<option value="fec12"  {% if g.dbname == 'fec12' %}selected="selected"{% endif %}>
 				FEC Presidential Campaign Dataset
 			</option>
-			<option value="intel" {% if g.dbname == 'intel' %}selected="selected"{% endif %}>
-				Intel Sensor Dataset
+			<option value="movielens" {% if g.dbname == 'movielens' %}selected="selected"{% endif %}>
+        Movie Lens Dataset
+      </option>
+
 			<!--<option value="bigdata" {% if g.dbname == 'bigdata' %}selected="selected"{% endif %}>
         Bigdata dataset
       </option>-->
@@ -25,6 +30,7 @@
 <script type="text/javascript">
 $("#dbselect").change(function() {
 	var dbname = $("#dbselect option:selected").val()
+  console.log("changed db to " + dbname)
 	global_state.db = dbname;
   var q = canned_queries[dbname].query;
   global_state.query = q;

@@ -8,17 +8,16 @@ function error(msg) {
 	$("#messagebox").append(div);
 }
 
-var onSelect = function(rows, node, pstore) {
-  var idstr = rows.map(function(row) { return row.id }).join(" ");
-  if (idstr in cache) return cache[idstr];
-  var inputs = pstore.lookup(rows);
-  var ids = _.map(inputs, function(row) {
-    return row.get(labels.x);
-  });
-  cache[idstr] = inputs;
-  global_state.highlighted_keys = inputs;
-  global_state.walkthrough.render()
-};
+var onSelect = (function() {
+  var cache = {};
+  return function(rows, node, pstore, agg) {
+    if (rows.length == 0) return;
+    global_state.walkthrough.loading()
+    var inputs = pstore.lookup(rows);
+    global_state.highlighted_keys[agg] = inputs;
+    global_state.walkthrough.render()
+  };
+})()
 
 
 function getYRange(data) {
@@ -63,11 +62,7 @@ var render_data = (function() {
     }
 
     var spec = {
-      on: {
-        select: function(rows, node, pstore) {
-          onSelect(rows, node, pstore);
-        }
-      },
+      on: { },
       opts: {
         uri: "http://localhost:8881"
       },
@@ -79,20 +74,27 @@ var render_data = (function() {
       }, 
       scales: {
         r: { range: [0, 20] },
-        y: { lim: [thisyrange[0], thisyrange[1]] }
+        y: { lim: [thisyrange[0], thisyrange[1]] },
+        color: "identity"
+      },
+      debug: {
+        'gg.wf.std': 0
       }
     }
 
-    _.each(labels.aggs, function(agg) {
+    var cscale = d3.scale.category10().domain(_.range(labels.aggs.length));
+    _.each(labels.aggs, function(agg, idx) {
       var layer = {
-        geom: {
-          type: 'point'
-        },
+        geom: 'point',
         aes: {
-          y: agg
+          y: agg,
+          color: cscale(idx)
         }
       };
       spec.layers.push(layer);
+      spec.on['brushend-layer-'+idx] = function(rows, node, pstore) {
+        onSelect(rows, node, pstore, agg);
+      }
     });
 
     var plot = gg(spec);
@@ -141,7 +143,8 @@ function render_raw_table(data) {
 
 // replaces ISOFORMAT strings in data with date objects
 // modifies arguments
-function fix_date_objects(data, labels) {
+// XXX: removed labels argument. assume global labels vaiable never changes
+function fix_date_objects(data){ //, labels) {
 	if (!labels['dt'] || labels['dt'].length == 0)
 		return data;
 
@@ -209,7 +212,7 @@ var get_aggdata = (function(){
 				var params = {'query' : query, 'filter' : where, 'db' : global_state.db}
 				$.post('/json/query/', params, function(resp) {
           resp.data = gg.data.fromArray(resp.data);
-					resp.data = fix_date_objects(resp.data, resp.labels);
+					resp.data = fix_date_objects(resp.data)//;, resp.labels);
           var thisyrange = getYRange(resp.data);
           global_state.yrange[0] = Math.min(global_state.yrange[0], thisyrange[0]);
           global_state.yrange[1] = Math.max(global_state.yrange[1], thisyrange[1]);

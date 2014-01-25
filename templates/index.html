@@ -24,13 +24,24 @@
       db : "{{g.dbname}}",
       query : "",
       yrange: [Infinity, -Infinity],
-      highlighted_keys: [],
-      bad_keys: [],
-      good_keys: [],
+      highlighted_keys: {},
+      bad_keys: {},
+      good_keys: {},
       bad_tuple_ids: {}, // legacy, passed to server but not used
       walkthrough: null
     }
 
+    function compute_n_keys(the_keys) {
+      return function() {
+        d3.sum(_.values(the_keys).map(function(keys) {
+          return keys.length;
+        }));
+      }
+    }
+
+    
+    global_state.n_bad_keys = compute_n_keys(global_state.bad_keys)
+    global_state.n_good_keys = compute_n_keys(global_state.good_keys);
 
 	$(function() {
 		{% if data %}
