@@ -72,7 +72,7 @@ class Query(object):
         
 
     def sqlize(self, val):
-        if isinstance(val, str):
+        if isinstance(val, basestring):
             return quote_sql_str(val)
         if isinstance(val, datetime):
             if val.hour == 0 and val.minute == 0 and val.second == 0:
@@ -127,9 +127,10 @@ class SelectAgg(object):
         self.cols = map(str, cols) # list of attributes 
         self.expr = expr # string of expression passed into aggregate function
         self.attr = attr # actual attribute token from sqlparse
+        self.fname = attr[0]
         self.isagg = True
 
-    shortname = property(lambda self: self.alias or self.expr)
+    shortname = property(lambda self: self.alias or self.fname or self.expr)
     func = property(lambda self: self._func.clone())
 
     def __str__(self):
