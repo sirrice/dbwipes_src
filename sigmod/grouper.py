@@ -275,6 +275,11 @@ class Grouper(object):
                 idx1 = merged_attrs.index(unique1)
                 idx2 = merged_attrs.index(unique2)
 
+                diff = time.time() - self.mr.start
+                if diff >= self.mr.max_wait:
+                  _logger.debug("wait %d > %d exceeded" % (diff, self.mr.max_wait))
+                  return
+
                 yield (merged_attrs, self.fulljoin(intersecting, merged_attrs, idx1, idx2, pgroup1, pgroup2))
 
     def fulljoin(self, inter, union, idx1, idx2, groups1, groups2):
