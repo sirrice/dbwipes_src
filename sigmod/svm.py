@@ -132,7 +132,7 @@ class SVM(Basic):
         ])
 
         learner = sksvm.OneClassSVM(kernel='rbf', nu=0.01)
-        sample = random.sample(gooddata, 10000)
+        sample = random.sample(gooddata, 8000)
         clf = learner.fit(sample)
         labels = clf.predict(allbaddata)
         bad = allbaddata[labels == -1]

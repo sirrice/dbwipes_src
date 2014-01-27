@@ -22,7 +22,7 @@ from Queue import Empty
 from db import *
 from aggerror import *
 from arch import *
-from util import get_logger, rm_attr_from_domain, reconcile_tables
+from util import get_logger, rm_attr_from_domain, reconcile_tables, valid_number
 from sigmod import *
 
 
@@ -79,12 +79,15 @@ def serial_hybrid(obj, aggerr, **kwargs):
     obj.db = db
     bad_tables = get_provenance_split(obj, aggerr.agg.cols, aggerr.keys)
     good_tables = get_provenance_split(obj, aggerr.agg.cols, obj.goodkeys[aggerr.agg.shortname]) or []
+    _logger.debug("bad table counts:  %s" % ', '.join(map(str, map(len, bad_tables))))
+    _logger.debug("good table counts: %s" % ', '.join(map(str, map(len, good_tables))))
+    print "agg error %s \t %s" % (aggerr.agg, aggerr.errtype)
 
     
     cost, ncalls = 0, 0
     rules = []
     try:
-        cols = valid_table_cols(bad_tables[0], aggerr, kwargs)
+        cols = valid_table_cols(bad_tables[0], aggerr.agg.cols, kwargs)
         all_cols = cols + aggerr.agg.cols        
         torm = [attr.name for attr in bad_tables[0].domain if attr.name not in all_cols]
         _logger.debug("valid cols: %s" % cols)
@@ -99,8 +102,9 @@ def serial_hybrid(obj, aggerr, **kwargs):
             'aggerr':aggerr,
             'cols':cols,
             'c' : 0.2,
-            'l' : 0.5,
-            'msethreshold': 0.01
+            'l' : 0.6,
+            'msethreshold': 0.01,
+            'max_wait':10 
             }
             # errperc=0.001,
             # 
@@ -115,8 +119,7 @@ def serial_hybrid(obj, aggerr, **kwargs):
             klass = MR 
             params.update({
                 'use_mtuples': False,
-                'max_wait': 30,
-                'c': 0.05,
+                'c': 0.15,
                 'granularity': 100
                 })
 
@@ -125,26 +128,27 @@ def serial_hybrid(obj, aggerr, **kwargs):
             params.update({
                 'use_cache': False,
                 'use_mtuples': False,#True,
-                'epsilon': 0.005,
+                'epsilon': 0.0015,
                 'min_improvement': 0.01,
-                'tau': [0.1, 0.5],
+                'tau': [0.05, 0.5],
                 'c' : 0.3,
                 'p': 0.7
                 })
 
         #klass = SVM
-        params.update({})
+        #params.update({})
 
         start = time.time()
         hybrid = klass(**params)
         clusters = hybrid(all_full_table, bad_tables, good_tables)
         print "nclusters: %d" % len(clusters)
-        #clusters = filter(lambda c: c.error >= 0, clusters)
-        normalize_cluster_errors(clusters)
-        clusters.sort(key=lambda c: c.error, reverse=True)
         rules = clusters_to_rules(clusters, cols, full_table)
-        #rules = [r.simplify(all_full_table) for r in rules]
-        rules = [r for r in rules if str(r).strip() != '']
+        for r in rules: Basic.influence(hybrid, r)
+        rules.sort(key=lambda r: r.quality, reverse=True)
+        rules = rules[:150]
+        rules = [r for r in rules if str(r).strip() != '' and valid_number(r.quality)]
+        rules.sort(key=lambda r: r.quality, reverse=True)
+
         dups = set()
         newrules = []
         for r in rules:
@@ -153,7 +157,15 @@ def serial_hybrid(obj, aggerr, **kwargs):
             dups.add(str(r))
             newrules.append(r)
         rules = newrules
-        rules = hybrid.group_rules(rules)
+
+        _logger.debug("clustering %d rules" % len(rules))
+        for r in rules[:5]:
+          _logger.debug("%.4f\t%s" % (r.quality, str(r)))
+
+
+
+        clustered_rules = hybrid.group_rules(rules, 15)
+        rules = clustered_rules
 
         cost = time.time() - start
         ncalls = 0
@@ -161,31 +173,42 @@ def serial_hybrid(obj, aggerr, **kwargs):
         traceback.print_exc()
 
     
+    # return the best rules first in the list
     rules.sort(key=lambda r: r.quality, reverse=True)
+    rules = [r.simplify(all_full_table) for r in rules[:10]]
+
 
     print "found rules"
-    print '\n'.join(map(str, rules[:5]))
+    for rule in rules[:5]:
+      print "%.5f\t%s" % (rule.quality, rule)
     
     return cost, ncalls, table, rules
 
 
 
-def valid_table_cols(table, aggerr, kwargs={}):
+def valid_table_cols(table, cols, kwargs={}):
   attrs = table.domain
   ret = []
   for attr in attrs:
-    if attr.name in ['id', 'err', 'pickup_id', 'pickup_address', 'epoch']:
+    if attr.name in ['id', 'err', 'pickup_id', 'pickup_address', 'epoch', 'userid', 'mid', 'imdb', 'tstamp']:
       continue
-    if attr.name in aggerr.agg.cols:
+    if attr.name in ["unknown", "action", "adventure", "animation", "children", "comedy", "crime", "documentary", "drama", "fantasy", "noir", "horro", "musical", "mystery", "romance", "scifi", "thriller", "war", "western"]:
+      continue
+    if attr.name in ['lin_ima', 'com_nam']:
+      continue
+    if attr.name in cols:
       continue
     if attr.name in kwargs.get('ignore_attrs',[]):
+      continue
+    if attr.name.endswith('id') and attr.name != 'moteid':
       continue
 
     nunique = len(set([row[attr].value for row in table]))
     print "%s:\tnunique %s" % (attr.name, nunique)
 
     if attr.varType != orange.VarTypes.Continuous:
-      if nunique > 0.5 * len(table) or nunique > 7000:
+      if nunique > 100 and nunique > 0.7 * len(table) or nunique > 7000:
+        print "%s skipped" % attr.name
         continue
     ret.append(attr.name)
   return ret
@@ -198,7 +221,7 @@ def parallel_hybrid(obj, aggerr, **kwargs):
 
     def f(bad_tables, aggerr, klass, params, kwargs, queue):
       try:
-        cols = valid_table_cols(bad_tables[0], aggerr, kwargs)
+        cols = valid_table_cols(bad_tables[0], aggerr.agg.cols, kwargs)
         all_cols = cols + aggerr.agg.cols        
         torm = [attr.name for attr in bad_tables[0].domain 
                 if attr.name not in all_cols]
@@ -234,7 +257,7 @@ def parallel_hybrid(obj, aggerr, **kwargs):
     all_tables = []
     map(all_tables.extend, bad_partition_tables)
     _, mastertable = reconcile_tables(all_tables)
-    cols = valid_table_cols(all_tables[0], aggerr, kwargs)
+    cols = valid_table_cols(all_tables[0], aggerr.agg.cols, kwargs)
 
     params = {
         'aggerr':aggerr,

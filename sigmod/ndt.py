@@ -1,9 +1,18 @@
+#
+# This file implements a naive decision tree algorithm that 
+# 1) labels points in the bad tables by using a cutoff 
+#    2 std from the mean tuple influence value
+# 2) learns a decision tree using Orange
+# 3) sorts the leaves by influence and returns the top k
+#
+
 import time
 import pdb
 import sys
 import Orange
 import orange
 import heapq
+import numpy as np
 sys.path.extend(['.', '..'])
 
 from itertools import chain
@@ -15,9 +24,11 @@ from score import QuadScoreSample7
 from bottomup.bounding_box import *
 from bottomup.cluster import *
 from util import *
+from sklearn import tree as sktree
 
 from settings import *
 from basic import Basic
+from merger import Merger
 
 inf = 1e10000000
 _logger = get_logger()
@@ -53,30 +64,110 @@ class NDT(Basic):
         _logger.debug( "creating training data")
         training = self.create_training(bad_cutoff, good_cutoff)
 
-        _logger.debug( "training on %d points" , len(training))
+
+        class_var = training.domain[self.CLASS_ID]
+        skdata = rm_attr_from_domain(training, [class_var])
+        Xs = np.array([ [v.value for v in row] for row in skdata ])
+        Ys = np.array([int(row[class_var].value) for row in training])
+
+        clf = sktree.DecisionTreeClassifier()
+        clf.fit(Xs, Ys)
+        rules = self.sktree_to_rules(skdata, clf.tree_)
+        fill_in_rules(rules, skdata, cols=self.cols)
+        print '\n'.join(map(str, rules))
+
+
+        #_logger.debug( "training on %d points" , len(training))
         tree = orngTree.TreeLearner(training)
         rules = tree_to_clauses(training, tree.tree)
-        _logger.debug('\n'.join(map(lambda r: '\t%s' % r, rules)))
+        #_logger.debug('\n'.join(map(lambda r: '\t%s' % r, rules)))
+
 #        tree = Orange.classification.tree.C45Learner(training, cf=0.001)
 #        rules = c45_to_clauses(training, tree.tree)
         self.cost_learn = time.time() - start
 
-        for rule in rules:
-            rule.quality = self.influence(rule)
-
         clusters = [Cluster.from_rule(rule, self.cols) for rule in rules]
         for cluster in clusters:
-            cluster.error = self.influence_cluster(cluster)
-        clusters = filter(lambda c: c.error != -1e10000000,clusters)
-
+          cluster.error = self.influence_cluster(cluster)
+        clusters = filter(lambda c: c.error != -inf, clusters)
 
         self.all_clusters = self.final_clusters = clusters
+        return self.final_clusters
 
-        self.costs = {'cost_cutoff' : self.cost_cutoff,
-                'cost_learn' : self.cost_learn}
+        thresh = compute_clusters_threshold(clusters, nstds=1.5)
+        is_mergable = lambda c: c.error >= thresh
+
+        params = dict(kwargs)
+        params.update({
+          'cols' : self.cols,
+          'err_func' : self.err_func,
+          'influence' : lambda c: self.influence_cluster(c),
+          'influence_components': lambda c: self.influence_cluster_components(c),
+          'is_mergable' : is_mergable,
+          'use_mtuples' : False,
+          'learner' : self})
+        self.merger = Merger(**params)
+        merged_clusters = self.merger(clusters)
+        merged_clusters.sort(key=lambda c: c.error, reverse=True)
+
+
+        self.all_clusters = clusters
+        self.final_clusters = merged_clusters
+
+        self.costs = {
+            'cost_cutoff' : self.cost_cutoff,
+            'cost_learn' : self.cost_learn
+        }
         return self.final_clusters
 
 
+    # assumes everything is continuous!!!
+    def sktree_to_rules(self, table, tree, node_id=0, parent=None, clauses=None):
+      def clauses_to_rule(table, clauses):
+        attr_to_ranges = {}
+        for attridx, minval, maxval in clauses:
+          cur = attr_to_ranges.get(attridx, [-inf, inf])
+          cur = (max(cur[0], minval), min(cur[1], maxval))
+          attr_to_ranges[attridx] = cur
+
+        conds = []
+        for pos, (minv, maxv) in attr_to_ranges.iteritems():
+          conds.append(Orange.data.filter.ValueFilterContinuous(
+              position=pos,
+              oper=orange.ValueFilter.Between,
+              min=minv,
+              max=maxv))
+        
+        return SDRule(table, None, conds)
+
+
+
+      clauses = clauses or []
+      ret = []
+      left = tree.children_left[node_id]
+      right = tree.children_right[node_id]
+
+      if left < 0:
+        val = tree.value[node_id]
+        #if val[0][1] > val[0][0]:
+        return [clauses_to_rule(table, clauses)]
+      else:
+        attridx = tree.feature[node_id]
+        threshold = tree.threshold[node_id]
+        leftclause = (attridx, -inf, threshold)
+        rightclause = (attridx, threshold, inf)
+
+        clauses.append(leftclause)
+        ret.extend(self.sktree_to_rules(table, tree, left, node_id, clauses))
+        clauses.pop()
+
+        clauses.append(rightclause)
+        ret.extend(self.sktree_to_rules(table, tree, right, node_id, clauses))
+        clauses.pop()
+      return ret
+
+
+      
  
 
     def influence_cutoff(self, tables, err_funcs):
@@ -100,8 +191,8 @@ class NDT(Basic):
                 1e100000)
         extend_good = lambda rule, t: rule.cloneAndAddContCondition(
                 t.domain[self.SCORE_ID],
-                good_cutoff,
-                1e100000)
+                -1e100000,
+                good_cutoff)
 
         domain = self.bad_tables[0].domain
         score_var = domain[self.SCORE_ID]
@@ -127,6 +218,7 @@ class NDT(Basic):
 
             train_table.extend(pos_matches)
             train_table.extend(neg_matches)
+        return train_table
 
         for table in self.good_tables:
             rule = SDRule(table, None)
@@ -276,8 +368,9 @@ def rule_from_clauses(table, clauses):
     return SDRule(table, None, conds)
 
 
-def tree_to_clauses(table, node, clauses=None):
+def tree_to_clauses(table, node, clauses=None, strclauses=None):
     clauses = clauses or []
+    strclauses = strclauses or []
     if not node:
         return []
 
@@ -293,12 +386,13 @@ def tree_to_clauses(table, node, clauses=None):
                 clauses.append( create_clause(table, var, bdesc))
             else:
                 clauses.append( create_clause(table, var, bdesc) )
-            ret.extend( tree_to_clauses(table, branch, clauses) )
+            strclauses.append((varname, bdesc))
+            ret.extend( tree_to_clauses(table, branch, clauses, strclauses) )
             clauses.pop()
     else:
         major_class = node.node_classifier.default_value
-        if major_class == '1' and clauses:
-            ret.append(rule_from_clauses(table, clauses))
+        #if major_class == '1' and clauses:
+        ret.append(rule_from_clauses(table, clauses))
 
     ret = filter(bool, ret)
     return ret

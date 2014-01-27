@@ -10,6 +10,10 @@ var canned_queries = {
     query: "SELECT sum(disb_amt), disb_dt as day FROM expenses_extradata WHERE (cand_id) = 'P80003338' GROUP BY day",
     db: "fec12"
   },
+  senate: {
+    query: "SELECT sum(dis_amo), can_nam as can_nam FROM senate WHERE (dis_dat) > '2000-01-01' GROUP BY can_nam ORDER BY sum(dis_amo) DESC",
+    db: "fec12"
+  },
   movielens: {
     query: "SELECT avg(rating), title FROM ratings WHERE adventure = 1 GROUP BY title",
     db: "movielens"
@@ -24,38 +28,36 @@ var canned_queries = {
 <div class="span7">
 <form id='querybox' class="form-horizontal"  action='/' method='POST'>
 
-<fieldset>
 {% include "dbselect.html" %}
-</fieldset>
-
 
 <fieldset>
-
-<div class="control-group">
-	<label class="control-label" for="query">
-		Query
-	</label>
-	<div class="controls">
-		<textarea name="query" id="query" class='input-xlarge' style="width:100%" rows=5 >{% if query %}{{query|safe}}{% endif %}</textarea>
-	</div>
-</div>
+  <div class="form-group">
+    <label class="control-label col-md-2" for="query">
+      Query
+    </label>
+    <div class="controls col-md-10">
+      <textarea name="query" id="query" class='input-xlarge' style="width:100%" rows=5 >{% if query %}{{query|safe}}{% endif %}</textarea>
+    </div>
+  </div>
 </fieldset>
 
 <fieldset class="query-description-fieldset">
-	<label class="control-label" for="query">
-		Description
-	</label>
-	<div class="controls">	
-		<blockquote id="query_desc"></blockquote>
-	</div>
+  <div class="form-group">
+    <label class="control-label col-md-2" for="query">
+      Description
+    </label>
+    <div class="controls col-md-10">	
+      <blockquote id="query_desc"></blockquote>
+    </div>
+  </div>
 </fieldset>
 
 <fieldset>
-<div class="control-group">
-	<div class="controls">
-		<input type="submit" class="btn btn-primary" style="width:100%;" value="Run Query" />
-	</div>
-</div>
+  <div class="form-group">
+    <div class="controls col-md-10 col-md-offset-2">
+      <input type="submit" class="btn btn-primary" style="width:100%;" value="Run Query" />
+    </div>
+  </div>
 </fieldset>
 
 </form>

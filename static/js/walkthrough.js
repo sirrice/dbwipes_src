@@ -25,6 +25,8 @@ var Walkthrough = function(opts) {
       global_state.bad_keys = {};
       _.each(global_state.highlighted_keys, function(keys, agg) {
         global_state.bad_keys[agg] = keys.map(_.identity);
+        global_state.bad_geoms[agg] = global_state.highlighted_geoms[agg].map(_.identity);
+        global_state.plot = render_drawing.plot();
       });
       $("#sb_addbad").toggleClass("clicked");
 			this.render();

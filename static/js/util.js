@@ -14,8 +14,9 @@ var onSelect = (function() {
     if (rows.length == 0) return;
     global_state.walkthrough.loading()
     var inputs = pstore.lookup(rows);
+    global_state.highlighted_geoms[agg] = rows;
     global_state.highlighted_keys[agg] = inputs;
-    global_state.walkthrough.render()
+    global_state.walkthrough.render(d3.mouse(document.body))
   };
 })()
 
@@ -32,6 +33,130 @@ function getYRange(data) {
 
 }
 
+var setup_swap_events = function() {
+  $("#swap-event-btn").click(swap_events);
+};
+
+var swap_events = function() {
+  var drawEl = $(".drawing"),
+      brushEl = $(".brush");
+
+  if (brushEl.css("pointer-events") == "all") {
+    brushEl.css("pointer-events", "none");
+    drawEl.css("pointer-events", "all");
+    $("#swap-event-btn").text("click when done");
+  } else {
+    drawEl.css("pointer-events", "none");
+    brushEl.css("pointer-events", "all");
+    global_state.drawn_path = render_drawing.path();
+    $("#swap-event-btn").text("click to draw");
+  } 
+}
+
+// assumes xs is sorted
+var interpolate_path = function(xys, xs) {
+  xys.sort(function(a,b) { return a[0] - b[0]; });
+  var idx = -1,
+      xyidx = 0,
+      xy = xys[0],
+      xyn = xys[1],
+      ys = [],
+      x = null;
+  while (++idx < xs.length ){
+    x = xs[idx];
+    while (x >= xyn[0] && ++xyidx < xys.length) {
+      xy = xyn;
+      xyn = xys[xyidx]
+    }
+    if (xyidx >= xys.length) break;
+    var ratio = (x-xy[0]) / (xyn[0]-xy[0]);
+    ys.push(ratio * (xyn[1]-xy[1]) + xy[1])
+  }
+  return ys;
+}
+
+
+var render_drawing = (function(){
+  var pathArr = null;
+  var canvas = null;
+  var canvasEl = null;
+  var _plot = null;
+
+  var f = function(plot) {
+    _plot = plot;
+    var svg = plot.svg;
+    var panes = svg.selectAll(".data-pane");
+    var w = +panes.attr('width'), 
+        h = +panes.attr('height');
+
+    canvas = panes.append("g").classed("drawing", true);
+    canvasEl = canvas[0][0];
+
+    canvas.append('rect')  
+      .style({
+        visibility:'hidden'
+      })
+      .attr('width', w)
+      .attr('height', h)
+
+    var line = d3.svg.line()
+      .x(function(d) { return d[0] })
+      .y(function(d) { return d[1] })
+      .interpolate('basis');
+
+    var isDrawing = false;
+    pathArr = null;
+    var path = canvas.append('path')
+      .style({'stroke': 'black', 'stroke-width': '3px', 'fill': 'none'});
+    var redraw = function() {
+      path.attr('d', line(pathArr));
+    };
+      
+      
+
+    canvas
+      .on('mousedown', function() {
+        isDrawing = true;
+        pathArr = [];
+        redraw();
+      })
+      .on('mousemove', function() {
+        if (!isDrawing) return;
+        var xy = d3.mouse(canvasEl);
+        if (pathArr.length > 1) {
+          var diff = pathArr[pathArr.length-1][0] - pathArr[pathArr.length-2][0];
+          if ((xy[0] - pathArr[pathArr.length-1][0])*diff > 0) {
+            pathArr.push(d3.mouse(canvasEl));
+            redraw();
+          }
+        } else if (pathArr.length == 1) {
+          var diff = xy[0] - pathArr[pathArr.length-1][0];
+          if (diff != 0) {
+            pathArr.push(d3.mouse(canvasEl));
+            redraw();
+          }
+        } else {
+          pathArr.push(d3.mouse(canvasEl));
+          redraw();
+        }
+      })
+      .on('mouseup', function() {
+        if (!isDrawing) return;
+        if (pathArr.length <= 1) pathArr = null;
+        isDrawing = false;
+      })
+
+
+  }
+
+  f.path = function() { return pathArr; }
+  f.status = function() { return canvas.style('pointer-events'); }
+  f.disable = function() { return canvas.style('pointer-events', 'none') }
+  f.enable = function() { return canvas.style('pointer-events', 'all') }
+  f.plot = function() { return _plot; }
+
+  return f;
+})();
 
 // data: list of objects
 // labels: {
@@ -64,7 +189,8 @@ var render_data = (function() {
     var spec = {
       on: { },
       opts: {
-        uri: "http://localhost:8881"
+        uri: "http://localhost:8881",
+w: 900
       },
       data: data,
       layers: [],
@@ -78,7 +204,7 @@ var render_data = (function() {
         color: "identity"
       },
       debug: {
-        'gg.wf.std': 0
+        'gg.wf.std': 5
       }
     }
 
@@ -104,9 +230,11 @@ var render_data = (function() {
       if (cachekey != null) {
         _cache[cachekey] = {
           lim: thisyrange,
-          svg: $("#aggplot svg")
+          svg: $("#aggplot svg"),
+          plot: plot
         };
       }
+      render_drawing(plot);
     });
 
     return plot;
@@ -266,5 +394,169 @@ function render_schema(selector,schema) {
 			.attr('width', '50%')
 			.text(String)
 			.style("font-size", "smaller");						
+}
+
+
+
+
+var onScorpionSubmit = function() {
+
+	if (global_state.n_bad_keys() == 0) {
+		error("Please select 1+ points to debug!")
+		return false;
+	}
+  
+  if (global_state.drawn_path != null) {
+    var n = 0;
+    var labelattr = null;
+    _.each(labels.aggs, function(yattr) {
+      if (yattr in global_state.bad_keys && 
+          global_state.bad_keys[yattr].length > 0) {
+        n++;
+        labelattr = yattr;
+      }
+    });
+    if (n > 1) {
+      error("When using drawing mode, only select one aggregate type as bad");
+      return false;
+    }
+
+    var path = global_state.drawn_path;
+    var bad_geoms = global_state.bad_geoms[labelattr];
+    var bad_keys = global_state.bad_keys[labelattr];
+    if (bad_keys.length != bad_geoms.length) {
+      error("can't deal with aggregation in renderer.  badkeys != badgeoms");
+      console.log(bad_keys);
+      console.log(bad_geoms);
+      return false;
+    }
+    var geomkeys = _.zip(bad_geoms, bad_keys);
+    geomkeys.sort(function(a, b) { return a[0].get('x') - b[0].get('x') });
+    bad_geoms = [];
+    bad_keys = [];
+    _.each(geomkeys, function(pair) {
+      bad_geoms.push(pair[0]);
+      bad_keys.push(pair[1]);
+    });
+    var xs = bad_geoms.map(function(r){return r.get('x')});
+    var ys = interpolate_path(path, xs);
+  
+
+    // XXX huge hack!
+    var plot = global_state.plot;
+    var pt = plot.workflow.sinks()[0].inputs[0];
+    var set = pt.right().any('scales');
+    var yscale = set.get('y');
+    var erreq = {};
+    erreq[labelattr] = _.map(ys, yscale.invert.bind(yscale));
+
+
+    // ok setup all of the form inputs
+    $("#errtype_1").attr('checked', true);
+    var form_bad_keys = {};
+    form_bad_keys[labelattr] = bad_keys.map(function(row) { 
+      return row.get(labels.x);
+    });
+    var form_good-keys = {};
+
+    global_state.attrs = [];
+    $(".errattrs").get().forEach(function(d) {
+      if(true || $(d).attr("checked")) {
+        global_state.attrs.push($(d).val());
+      }
+    })
+
+    $("#errbox_attrs").val(JSON.stringify(global_state.attrs));
+    $("#errbox_errids").val(JSON.stringify(global_state.bad_tuple_ids));
+    $("#erreq").val(JSON.stringify(erreq));
+    $("#errbox_val").val(JSON.stringify(form_bad_keys));
+    $("#errbox_goodkeys").val(JSON.stringify(form_good_keys));
+    $("#errbox_db").val(global_state.db);
+
+
+
+    return false;
+  }
+
+
+  var form_bad_keys = {};
+  var form_good_keys = {};
+
+
+  _.each(labels.aggs, function(yattr) {
+    try{
+      var errtype = false;
+      if (!errtype || errtype === undefined) {
+        // assume only one agrgegate
+        //var yattr = labels.aggs[0];
+        if (!(yattr in global_state.bad_keys)) return;
+
+        var bad_keys = global_state.bad_keys[yattr];
+        var bad_vals = bad_keys.map(function(row) {
+          return row.get(yattr);
+        });
+
+        var good_vals = null;
+        var good_keys = null;
+        if ((yattr in global_state.good_keys) && global_state.good_keys[yattr].length > 0) {
+          good_keys = global_state.good_keys[yattr];
+          good_vals = good_keys.map(function(row) { 
+            return row.get(yattr);
+          });
+        } else {
+          var bad_ids = bad_keys.map(function(row) { return row.id; });
+          good_keys = data.filter(function(row) {
+            return !_.contains(bad_ids, row.id);
+            })
+          
+          good_vals = good_keys.map(function(row) {
+            return row.get(yattr);
+          })
+          good_keys = _.sample(good_keys.all(), 10)
+        }
+      }
+
+      console.log(d3.mean(bad_vals));
+      console.log(d3.mean(good_vals));
+      var avgbad = d3.mean(bad_vals),
+        avggood = d3.mean(good_vals);
+      if (avgbad > avggood) {
+        errtype = "2";
+      } else if (avgbad < avggood) {
+        errtype = "3";
+      } else {
+        errtype = "0";
+      }
+      console.log("setting errtype to " + errtype)
+      $("#errtype_"+errtype).attr("checked", true)
+
+      form_bad_keys[yattr] = bad_keys.map(function(row) { 
+        return row.get(labels.x);
+      });
+      form_good_keys[yattr] = good_keys.map(function(row) {
+        return row.get(labels.x);
+      });
+
+      
+    } catch(exception) {
+      console.log(exception.stack)
+      return false;
+    }
+  })
+  
+  
+  global_state.attrs = [];
+  $(".errattrs").get().forEach(function(d) {
+    if(true || $(d).attr("checked")) {
+      global_state.attrs.push($(d).val());
+    }
+  })
+
+	$("#errbox_attrs").val(JSON.stringify(global_state.attrs));
+	$("#errbox_errids").val(JSON.stringify(global_state.bad_tuple_ids));
+	$("#errbox_val").val(JSON.stringify(form_bad_keys));
+	$("#errbox_goodkeys").val(JSON.stringify(form_good_keys));
+	$("#errbox_db").val(global_state.db);
+	return true;	
 }
 

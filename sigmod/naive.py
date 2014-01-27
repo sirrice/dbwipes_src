@@ -17,10 +17,10 @@ from bottomup.bounding_box import *
 from bottomup.cluster import *
 from util import *
 
-from util.misc import powerset
+from util.misc import powerset, valid_number
 from basic import Basic
 
-inf = 1e10000000
+inf = float('inf')
 _logger = get_logger()
 
 class Naive(Basic):
@@ -137,7 +137,7 @@ class Naive(Basic):
                     clone.quality = inf
                     clone.__examples__ = None
 
-                    if math.isnan(clone.quality) or clone.quality == -1e100000000:
+                    if not valid_number(clone.quality):
                         continue
 
                     if len(self.bests_per_c[c]) < self.max_bests:

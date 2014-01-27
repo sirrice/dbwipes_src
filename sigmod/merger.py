@@ -15,6 +15,7 @@ from operator import mul, and_, or_
 
 from util import rm_attr_from_domain, get_logger, instrument
 from util.table import *
+from util.misc import valid_number
 from bottomup.bounding_box import *
 from bottomup.cluster import *
 from zero import Zero
@@ -95,6 +96,7 @@ class Merger(object):
         return filter(c1.discretes_intersect,
                       filter(c2.discretes_intersect, intersecting_clusters))
 
+    @instrument
     def construct_rtree(self, clusters):
         if not len(clusters[0].bbox[0]):
             class k(object):
@@ -231,20 +233,21 @@ class Merger(object):
     @instrument
     def expand(self, cluster, clusters):
         rms = set()
+        _logger.debug("expand: %s", cluster)
         while True:
             neighbors = self.adj_graph.neighbors(cluster)
             
             rms, tomerges = set(), list()
             for n in neighbors:
-                if n in rms or cluster.contains(n) or cluster.same(n, epsilon=0.02):
-                    rms.add(n)
-                    continue
-                tomerges.append(n)
+              if n in rms or cluster.contains(n) or cluster.same(n, epsilon=0.02):
+                  rms.add(n)
+                  continue
+              tomerges.append(n)
 
             if not tomerges:
                 break
 
-            def filter_cluster(c):
+            def filter_cluster(c, n):
                 if c is None:
                     reasons.append('.')
                     return False
@@ -260,36 +263,38 @@ class Merger(object):
                 if c.error <= cluster.error:
                     reasons.append('<%.4f'%c.error)
                     return False
+                if c.error <= n.error:
+                    reasons.append('<n')
+                    return False
                 reasons.append('!')
                 return True
 
 
             tomerges.sort(key=lambda n: (-cluster.discretes_distance(n), volume(bounding_box(cluster.bbox, n.bbox))), reverse=True)
+            merged = cluster
+            merged_neighbor = None
             reasons = []
-            merges = []
             seen = []
             f = lambda tomerge: self.merge(cluster, tomerge, clusters)
             for n in tomerges:
-                bseen = False
-                for _ in seen:
-                    if _.contains(n):
-                        bseen = True
-                if bseen: continue
+              bseen = False
+              for _ in seen:
+                if _.same(n, epsilon=0.05) or _.contains(n):
+                  bseen = True
+              if bseen: continue
 
-                _ = f(n)
-                if _:
-                    seen.append(_)
-                if filter_cluster(_):
-                    merges.append(_)
-                    #break
-#            merges = map(f, tomerges)
-#            merges = filter(filter_cluster, merges)
+              _ = f(n)
+              if _:
+                seen.append(_)
+              if filter_cluster(_, n):
+                if _.error > merged.error:
+                  merged_neighbor = n
+                  merged = _
 
             _logger.debug("neighbors: %d\t%s", len(neighbors), cluster)
-            _logger.debug("reason   :%s", ''.join(reasons))
-            if not merges:
+            _logger.debug("reason   :   \t%s", ''.join(reasons))
+            if not merged_neighbor:
                 break
-            merged = max(merges, key=lambda m: m.error)
 
             _logger.debug('\tmerged:\t%s',merged)
 
@@ -306,7 +311,7 @@ class Merger(object):
             return
 
         try:
-            import bsddb as bsddb33
+            import bsddb as bsddb3
             self.cache =  bsddb3.hashopen(self.CACHENAME)
             myhash = str(hash(self.learner))
             c = str(self.learner.c)
@@ -346,7 +351,7 @@ class Merger(object):
         c = self.learner.c
         if self.use_cache:
             try:
-                import bsddb as bsddb33
+                import bsddb as bsddb3
                 self.cache =  bsddb3.hashopen(self.CACHENAME)
                 if myhash not in self.cache:
                     self.cache.close()
@@ -419,9 +424,11 @@ class Merger(object):
         self.setup_stats(clusters)
 
         # adj_graph is used to track adjacent partitions
+        _logger.debug("building adj graph")
         self.adj_graph = self.make_adjacency(clusters, self.partitions_complete)
         # rtree is static (computed once) to find base partitions within 
         # a merged partition
+        _logger.debug("building rtree")
         self.rtree = self.construct_rtree(clusters)
 
         # load state from cache
@@ -429,72 +436,72 @@ class Merger(object):
         if can_stop:
             return sorted(clusters_set, key=lambda c: c.error, reverse=True)
 
+        _logger.debug("start merging!")
         while len(clusters_set) > self.min_clusters:
 
-            cur_clusters = sorted(clusters_set, key=lambda c: c.error, reverse=True)
+          cur_clusters = sorted(clusters_set, key=lambda c: c.error, reverse=True)
 
-            _logger.debug("# mergable clusters: %d\tout of\t%d",
-                    len(mergable_clusters),
-                    len(cur_clusters))
-            if not mergable_clusters:
+          _logger.debug("# mergable clusters: %d\tout of\t%d",
+                  len(mergable_clusters),
+                  len(cur_clusters))
+          if not mergable_clusters:
+              break
+
+
+          merged_clusters, new_clusters = set(), set()
+          seen = set()
+
+          for cluster in mergable_clusters:
+            if cluster in merged_clusters or cluster in new_clusters or cluster in seen:
+                continue
+
+            skip = False
+            for test in chain(new_clusters, mergable_clusters):
+              if test == cluster: continue
+              if test.contains(cluster, .01):
+                #_logger.debug("skipped\n\t%s\n\t%s", str(cluster), str(test))
+                skip = True
                 break
+            if skip:
+              _logger.debug("skipped\n\t%s\n\t%s", str(cluster), str(test))
+              continue
 
-
-            merged_clusters, new_clusters = set(), set()
-            seen = set()
-
-            for cluster in mergable_clusters:
-                if cluster in merged_clusters or cluster in new_clusters or cluster in seen:
-                    continue
-
-                skip = False
-                for test in chain(new_clusters, mergable_clusters):
-                    if test == cluster: continue
-                    if test.contains(cluster, .01):
-                        #_logger.debug("skipped\n\t%s\n\t%s", str(cluster), str(test))
-                        skip = True
-                        break
-                if skip:
-                    _logger.debug("skipped\n\t%s\n\t%s", str(cluster), str(test))
-                    continue
-
-                merged, rms = self.expand(cluster, clusters) 
-                if not merged or merged == cluster or len(filter(lambda c: c.contains(merged), cur_clusters)):
-                    seen.add(cluster)
-                    continue
-                if math.isnan(merged.error) or merged.error == -1e1000000:
-                    continue
-                
-                _logger.debug("%.4f\t%.4f\t-> %.4f",
-                               merged.parents[0].error,
-                               merged.parents[1].error,
-                               merged.error)
-                seen.update(merged.parents)
-                seen.update(rms)
-
-
-                if merged not in cur_clusters:
-                    new_clusters.add(merged)                    
-                merged_clusters.update(rms)
-
-            _logger.debug("merged %d\t%d new clusters\tout of %d",
-                          len(merged_clusters),
-                          len(new_clusters),
-                          len(mergable_clusters))
-
+            merged, rms = self.expand(cluster, clusters) 
+            if not merged or merged == cluster or len(filter(lambda c: c.contains(merged), cur_clusters)):
+              seen.add(cluster)
+              continue
+            if not valid_number(merged.error):
+              continue
             
-            if not new_clusters:
-                break
+            _logger.debug("%.4f\t%.4f\t-> %.4f",
+                            merged.parents[0].error,
+                            merged.parents[1].error,
+                            merged.error)
+            seen.update(merged.parents)
+            seen.update(rms)
 
 
-            map(self.adj_graph.remove, merged_clusters)
-            map(self.adj_graph.insert, new_clusters)
-            clusters_set.difference_update(merged_clusters)
-            clusters_set.update(new_clusters)
-            mergable_clusters = sorted(new_clusters, key=lambda c: c.error, reverse=True)
+            if merged not in cur_clusters:
+              new_clusters.add(merged)                    
+            merged_clusters.update(rms)
 
-        clusters_set = filter(lambda c: c.error != -1e10000000, clusters_set) 
+          _logger.debug("merged %d\t%d new clusters\tout of %d",
+                        len(merged_clusters),
+                        len(new_clusters),
+                        len(mergable_clusters))
 
+          
+          if not new_clusters:
+              break
+
+
+          map(self.adj_graph.remove, merged_clusters)
+          map(self.adj_graph.insert, new_clusters)
+          clusters_set.difference_update(merged_clusters)
+          clusters_set.update(new_clusters)
+          mergable_clusters = sorted(new_clusters, key=lambda c: c.error, reverse=True)
+
+        clusters_set = filter_bad_clusters(clusters_set)
         self.cache_results(clusters_set, mergable_clusters)
         return sorted(clusters_set, key=lambda c: c.error, reverse=True)
             

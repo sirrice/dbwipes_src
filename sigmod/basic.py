@@ -18,7 +18,7 @@ from util import *
 from errfunc import ErrTypes
 
 
-inf = 1e100000000000
+inf = float('inf')
 
 class Basic(object):
 
@@ -120,6 +120,25 @@ class Basic(object):
       rule = self.cluster_to_rule(cluster)
       return Basic.influence(self, rule)
 
+  def influence_cluster_components(self, cluster):
+      rule = self.cluster_to_rule(cluster)
+      bdeltas, bcounts = Basic.bad_influences(self, rule)
+      gdeltas, gcounts = Basic.good_influences(self, rule)
+      gdeltas = map(abs, gdeltas)
+      return bdeltas, bcounts, gdeltas, gcounts
+
+  def influence_from_components(self, bdeltas, bcounts, gdeltas, gcounts, c):
+      if c is None:
+          c = self.c
+      binfs = [bdelta/(bcount**c) for bdelta,bcount in zip(bdeltas, bcounts) if bcount]
+      ginfs = [gdelta for gdelta,gcount in zip(gdeltas, gcounts) if gcount]
+      
+      binf = binfs and np.mean(binfs) or -inf
+      ginf = ginfs and max(ginfs) or 0
+      inf = self.l * binf - (1. - self.l) * ginf
+
+      return inf
+
 
   def influences(self, rule, cs=[]):
       """
@@ -134,7 +153,7 @@ class Basic(object):
           binfs = [bdelta/(bcount**c) for bdelta,bcount in zip(bdeltas, bcounts) if bcount]
           ginfs = [gdelta for gdelta,gcount in zip(gdeltas, gcounts) if gcount]
           
-          binf = binfs and np.mean(binfs) or -1e10000000
+          binf = binfs and np.mean(binfs) or -inf
           ginf = ginfs and max(ginfs) or 0
           inf = self.l * binf - (1. - self.l) * ginf
 
@@ -142,24 +161,27 @@ class Basic(object):
       return ret
 
 
-
   def influence(self, rule, c=None):
-      bdeltas, bcounts = self.bad_influences(rule)
-      gdeltas, gcounts = self.good_influences(rule)
-      gdeltas = map(abs, gdeltas)
-      
-      if c is None:
-          c = self.c
-      binfs = [bdelta/(bcount**c) for bdelta,bcount in zip(bdeltas, bcounts) if bcount]
-      ginfs = [gdelta for gdelta,gcount in zip(gdeltas, gcounts) if gcount]
-
-      
-      binf = binfs and np.mean(binfs) or -1e10000000
-      ginf = ginfs and max(ginfs) or 0
-      inf = self.l * binf - (1. - self.l) * ginf
-
+      binf = self.bad_influence(rule, c)
+      ginf = self.good_influence(rule, c)
+      inf = self.l * binf - (1.-self.l) * ginf
       rule.quality = inf
       return inf
+
+  def bad_influence(self, rule, c=None):
+      if c is None: c = self.c
+      bdeltas, bcounts = self.bad_influences(rule)
+      binfs = [bdelta/(bcount**c) for bdelta,bcount in zip(bdeltas, bcounts) if bcount]
+      binf = binfs and np.mean(binfs) or -inf
+      return binf
+
+  def good_influence(self, rule, c=None):
+      if c is None: c = self.c
+      gdeltas, gcounts = self.good_influences(rule)
+      gdeltas = map(abs, gdeltas)
+      ginfs = [gdelta for gdelta,gcount in zip(gdeltas, gcounts) if gcount]
+      ginf = ginfs and max(ginfs) or 0
+      return ginf
 
 
   def bad_influences(self, rule):
@@ -178,22 +200,112 @@ class Basic(object):
           infs.append(inf)
       return infs, map(len, datas)
 
-  def group_rules(self, rules):
+  def group_rules(self, rules, nclusters=7):
+
+      rules.sort(key=lambda r: r.quality, reverse=True)
+      return self.kmeans(rules[:50], nclusters)
+
+      c = self.c
+      def f((delta, count)):
+        if count == 0: return 0
+        return delta / count**c
+
+
+
+      Xs = []
+      for rule in rules:
+        deltas, counts = self.bad_influences(rule)
+        binfs = map(f, zip(deltas, counts))
+        ginfs = self.good_influences(rule)[0]
+        features = []
+        features.extend(binfs)
+        features.extend(ginfs)
+        Xs.append(features)
+      Xs = np.array(Xs)
+
+      discretizers = []
+      for colidx in xrange(Xs.shape[1]):
+        minv, maxv = min(Xs[:,colidx]), max(Xs[:,colidx])
+        if minv == maxv:
+          discretizers.append(lambda v: v)
+        blocksize = (maxv - minv) / 50.
+        discretizers.append(lambda v: (v - minv) / blocksize)
+
+      clusters = defaultdict(list)
+      for idx, feature in enumerate(Xs[:40]):
+        key = [f(v) for f, v in zip(discretizers, feature)]
+        key = tuple(key)
+        clusters[key].append(rules[idx])
+
+
+      words = ['gmmb', 'media', 'dc', 'washington']
+      get_features = lambda r: [word in str(r).lower() for word in words] + [r.quality]
+      ret = []
+      for cluster_rules in clusters.values():
+        # hack: try to find rules containing media buy or GMMC
+        features = map(get_features, cluster_rules)
+        nrules = len(cluster_rules)
+
+        best_idx = max(range(nrules), key=lambda i: features[i])
+        best = cluster_rules[best_idx]
+
+        cluster_rules = [r for r in cluster_rules if r.id != best.id]
+        best.cluster_rules.update(cluster_rules)
+        print best
+        ret.append(best)
+      return ret
+ 
+
+
+
+
+      std = np.std([r.quality for r in rules])
+      mean = np.mean([r.quality for r in rules])
+      rules.sort(key=lambda r: r.quality)
+      high_quality = [r for r in rules if r.quality >= std+mean]
+      if len(high_quality) < 30:
+        high_quality = rules[-30:]
+      end = len(rules) - len(high_quality)
+      low_quality = rules[max(0, end-30): end]
+      print ("%d high quality %d low quality rules" % (len(high_quality), len(low_quality)))
+      return self.kmeans(high_quality) + self.kmeans(low_quality)
+
+  def kmeans(self, rules, nclusters=7):
+      if not rules: return rules
+
       influences = []
       c = self.c
       def f((delta, count)):
         if count == 0: return 0
         return delta / count**c
 
+      nbadinfs = 0
+      ngoodinfs = 0
       for rule in rules:
         deltas, counts = self.bad_influences(rule)
-        infs = map(f, zip(deltas, counts))
-        influences.append(infs)
+        bad_infs = map(f, zip(*self.bad_influences(rule)))
+        good_infs = zip(*self.good_influences(rule))[0]
+        influences.append(list(bad_infs)+list(good_infs))
+        nbadinfs = len(bad_infs)
+        ngoodinfs = len(good_infs)
       influences = np.asarray(influences)
 
+      # normalize
+      for colidx in xrange(influences.shape[1]):
+        col = influences[:, colidx]
+        mean, std = np.mean(col), np.std(col)
+        # prefer bad influences
+        if colidx < nbadinfs:
+          std *= 1.5
+        col = (col - mean) 
+        if std != 0: 
+          col /= std
+        influences[:,colidx] = col
+
+
       try:
-        from sklearn.cluster import KMeans
-        clusterer = KMeans(6)
+        from sklearn.cluster import AffinityPropagation, KMeans
+        clusterer = KMeans(nclusters, n_init=3)
         clusterer.fit(influences)
       except Exception as e:
         print "problem running kmeans"
@@ -204,7 +316,11 @@ class Basic(object):
       labels = clusterer.labels_
       rules = np.asarray(rules)
       words = ['gmmb', 'media', 'dc', 'washington']
-      get_features = lambda r: [word in str(r).lower() for word in words]
+      diff = rules[0].quality - rules[min(len(rules)-1, 30)].quality
+      def get_features(r):
+        ret = [word in str(r).lower() for word in words]
+        q = r.quality - diff/100. * len(str(r))
+        return q
       ret = []
       for labelval in set(labels):
         idxs = labels == labelval

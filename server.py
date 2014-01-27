@@ -128,7 +128,7 @@ def intel_query():
         if not sql:
             sql = """ SELECT avg(temp), stddev(temp), date_trunc('hour',date+time) as dt
             FROM readings
-            WHERE date > '2004-3-5' and date < '2004-3-15'
+            WHERE date > '2004-3-1' and date < '2004-3-15'
             GROUP BY dt; """
 
         obj = get_query_sharedobj(sql, delids)

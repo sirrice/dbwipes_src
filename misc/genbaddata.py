@@ -24,6 +24,7 @@ Bad data ranges
 import subprocess
 import random
 import sys
+import os
 
 
 if len(sys.argv) < 2:
@@ -80,17 +81,14 @@ with file('/tmp/%s' % tablename, 'w') as f:
 
 dbname = 'harddata'
 
-subprocess.call(["psql",
-                 dbname,
-                 "-c",
-                 "drop table %s" % tablename])
+try:
+  os.system("psql -h localhost %s -c 'drop table %s'" % (dbname, tablename))
+except Exception as e:
+  print e
 
-subprocess.call(["psql",
-                 dbname,
-                 "-c",
-                 "create table %s (id serial, x float, y float, z float, v float)" % tablename])
+try:
+  os.system("psql -h localhost %s -c 'create table %s (id serial, x float, y float, z float, v float)'" % (dbname, tablename))
+except Exception as e:
+  print e
 
-subprocess.call(["psql",
-                 dbname,
-                 "-c",
-                 "copy %s (x,y,z,v) from '/tmp/%s' with csv" % (tablename, tablename)])
+os.system("psql -h localhost %s -c \"copy %s (x,y,z,v) from '/tmp/%s' with csv\"" % (dbname, tablename, tablename))

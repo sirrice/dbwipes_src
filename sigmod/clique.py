@@ -60,33 +60,34 @@ class MR(Basic):
         self.granularity = kwargs.get('granularity', self.granularity)
 
     def make_rules(self, cur_groups):
-        if cur_groups == None:
-            new_groups = self.grouper.initial_groups()
-        else:
-            new_groups = self.grouper.merge_groups(cur_groups)
+      if cur_groups == None:
+        new_groups = self.grouper.initial_groups()
+      else:
+        new_groups = self.grouper.merge_groups(cur_groups)
 
-        rules = {}
+      rules = {}
 
-        for attrs, groups in new_groups:
-            start = time.time()
-            for ro in self.grouper(attrs, groups):
+      for attrs, groups in new_groups:
+        start = time.time()
+        for ro in self.grouper(attrs, groups):
 
-                if self.max_wait:
-                    self.n_rules_checked -= len(ro.rule.filter.conditions)
-                    if self.n_rules_checked <= 0:
-                        diff = time.time() - self.start
-                        if not self.checkpoints or diff - self.checkpoints[-1][0] > 10:
-                            if self.best:
-                                best_rule = max(self.best, key=lambda r: r.inf).rule
-                                self.checkpoints.append((diff, best_rule))
-                        self.stop = diff > self.max_wait
-                        self.n_rules_checked = 1000
-                    if self.stop:
-                        return
+          if self.max_wait:
+            self.n_rules_checked -= len(ro.rule.filter.conditions)
+            if self.n_rules_checked <= 0:
+              diff = time.time() - self.start
+              if not self.checkpoints or diff - self.checkpoints[-1][0] > 10:
+                if self.best:
+                  best_rule = max(self.best, key=lambda r: r.inf).rule
+                  self.checkpoints.append((diff, best_rule))
+              self.stop = diff > self.max_wait
+              self.n_rules_checked = 1000
+            if self.stop:
+              _logger.debug("wait %d > %d exceeded." % (diff, self.max_wait))
+              return
 
 
-                yield attrs, ro
-#            print "group by\t%s\t%.4f" % (str([attr.name for attr in attrs]), time.time()-start)
+          yield attrs, ro
+#        print "group by\t%s\t%.4f" % (str([attr.name for attr in attrs]), time.time()-start)
 
 
 
@@ -170,8 +171,10 @@ class MR(Basic):
         ret = []
         for bests in self.opts_per_iter:
             bests.sort(reverse=True)
-            ret.extend( self.merge_rules(bests))
-        ret.sort(reverse=True)
+            ret.extend(bests)# self.merge_rules(bests))
+        ret = map(self.blah_to_cluster, ret)
+        #ret = self.merge_rules(ret)
+        #ret.sort(reverse=True)
         self.final_clusters = ret
         return ret
 
@@ -192,7 +195,7 @@ class MR(Basic):
 
         for c in clusters:
             c.error = self.influence(c) 
-        clusters = filter(lambda c: c.error != -1e1000000, clusters)
+        clusters = filter_bad_clusters(clusters)
         thresh = compute_clusters_threshold(clusters, nstds=0.)
         is_mergable = lambda c: c.error >= thresh
         is_mergable = lambda c: True

@@ -10,60 +10,52 @@ submit
 -->
 
 
-<div id="walkthrough-popover" class="popover right in" style="">
-	<div class="arrow"></div>
+<div id="walkthrough-popover" class="popover right in" style="background:none; box-shadow:none; border:none;">
+	<!--<div class="arrow"></div>-->
 	<div class="popover-inner">
 		<div class="popover-title">
-			<h3>Scorpion
-			<button class="close" style="">x</button></h3>
+			<h4>Scorpion <button class="close" style="">x</button></h4>
 		</div>
 		<div class="popover-content" id="walkthrough-container" style="position:relative; ">
-
-
-
 		
 			<form id='errorbox' class="form-horizontal" action='/debug/' method='POST'>
 			<fieldset>
 
 
-        <div class="block" id="walkthrough-loading" style="display:none;">
+        <div class="form-group" id="walkthrough-loading" style="display:none;">
           loading...
         </div>
 
-				<div class="block" id="walkthrough-0">
-					<div class='control-group'>
-						<label class="control-label" for="errortypes">
-								Selected outputs are
-						</label>
-						<div class="controls">
-							<span id="sb_addbad" class="btn btn-danger" style="width: 85%; display:block;">
-								bad outputs
-							</span>
-							<span id="sb_addgood" class="btn btn-primary" style="width: 85%; display:block;">
-								good outputs
-							</span>
-							<div style="clear:both"></div>
-						</div>
-					</div>
+				<div class="form-group" id="walkthrough-0">
+          <label class="col-sm-3 control-label" for="errortypes">
+              Selected outputs are
+          </label>
+          <div class="col-sm-9">
+            <span id="sb_addbad" class="form-control btn btn-danger" >
+              bad outputs
+            </span>
+            <span id="sb_addgood" class="form-control btn btn-success" >
+              good outputs
+            </span>
+            <span class="form-control btn btn-default" id="swap-event-btn">
+              click to draw</span>
+          </div>
 				</div>			
 
         <div style="display: none;">
         {% for attrname, type, checked in result_schema %}
-
           <label class="checkbox">
             <input type="checkbox" checked class="errattrs" id="errattrs_{{attrname}}" value="{{attrname}}"/>
           </label>
-
         {% endfor %}
         </div>
 
         <div class="controls" style="display: none">
-          <label class="radio"><input type="radio" id="errtype_0" name="errtype" {% if errtype == '0' %}checked{% endif %} value="0">Wrong.</label>
-          <!--        <label class="radio inline" style="margin-right: 10px;">
-          <input type="radio" id="errtype_1" name="errtype" {% if errtype == '1' %}checked{% endif %} value="1">Should be equal to
-          </label> <input class="inline" name="erreq" value="{{endeq}}" style=""/>-->
-          <label class="radio"><input type="radio" id="errtype_2" name="errtype" {% if errtype == '2' %}checked{% endif %} value="2">Too High</label>
-        <label class="radio"><input type="radio" id="errtype_3" name="errtype" {% if errtype == '3' %}checked{% endif %} value="3">Too Low</label>
+          <input type="radio" id="errtype_0" name="errtype" {% if errtype == '0' %}checked{% endif %} value="0" />
+          <input type="radio" id="errtype_1" name="errtype" {% if errtype == '1' %}checked{% endif %} value="1" />
+          <input type="radio" id="errtype_2" name="errtype" {% if errtype == '2' %}checked{% endif %} value="2" />
+          <input type="radio" id="errtype_3" name="errtype" {% if errtype == '3' %}checked{% endif %} value="3" />
+          <input id="erreq" name="erreq" value="{{endeq}}"/>
         </div>
 
         <textarea style="display:none;" id="errbox_query" name="query">{{query|safe}}</textarea>
@@ -75,9 +67,10 @@ submit
 
 
 
-				<div class='form-actions'>
-					<input type="submit" id="errbox_submit" class="btn btn-primary" value="Debug Highlighted Points!" style="float:right;"></input>
-					<div style="clear:both"></div>
+        <div class="form-group">
+          <div class="controls col-sm-9 col-sm-offset-3">
+            <input type="submit" id="errbox_submit" class="form-control btn btn-primary" value="Debug Highlighted Points!"></input>
+          </div>
 				</div>
 
 
@@ -131,90 +124,11 @@ submit
 
 <script type="text/javascript">
 $("#errorbox").submit(function() {
-	if (global_state.n_bad_keys() == 0) {
-		error("Please select 1+ points to debug!")
-		return false;
-	}
-
-
-  var form_bad_keys = {};
-  var form_good_keys = {};
-
-
-  _.each(labels.aggs, function(yattr) {
-    try{
-      var errtype = false;
-      if (!errtype || errtype === undefined) {
-        // assume only one agrgegate
-        //var yattr = labels.aggs[0];
-        if (!(yattr in global_state.bad_keys)) return;
-
-        var bad_keys = global_state.bad_keys[yattr];
-        var bad_vals = bad_keys.map(function(row) {
-          return row.get(yattr);
-        });
-
-        var good_vals = null;
-        var good_keys = null;
-        if ((yattr in global_state.good_keys) && global_state.good_keys[yattr].length > 0) {
-          good_keys = global_state.good_keys[yattr];
-          good_vals = good_keys.map(function(row) { 
-            return row.get(yattr);
-          });
-        } else {
-          var bad_ids = bad_keys.map(function(row) { return row.id; });
-          good_keys = data.filter(function(row) {
-            return !_.contains(bad_ids, row.id);
-            })
-          
-          good_vals = good_keys.map(function(row) {
-            return row.get(yattr);
-          })
-          good_keys = _.sample(good_keys.all(), 10)
-        }
-      }
-
-      console.log(d3.mean(bad_vals));
-      console.log(d3.mean(good_vals));
-      var avgbad = d3.mean(bad_vals),
-        avggood = d3.mean(good_vals);
-      if (avgbad > avggood) {
-        errtype = "2";
-      } else if (avgbad < avggood) {
-        errtype = "3";
-      } else {
-        errtype = "0";
-      }
-      console.log("setting errtype to " + errtype)
-      $("#errtype_"+errtype).attr("checked", true)
-
-      form_bad_keys[yattr] = bad_keys.map(function(row) { 
-        return row.get(labels.x);
-      });
-      form_good_keys[yattr] = good_keys.map(function(row) {
-        return row.get(labels.x);
-      });
-
-      
-    } catch(exception) {
-      console.log(exception.stack)
-      return false;
-    }
-  })
-  
-  
-  global_state.attrs = [];
-  $(".errattrs").get().forEach(function(d) {
-    if(true || $(d).attr("checked")) {
-      global_state.attrs.push($(d).val());
-    }
-  })
-
-	$("#errbox_attrs").val(JSON.stringify(global_state.attrs));
-	$("#errbox_errids").val(JSON.stringify(global_state.bad_tuple_ids));
-	$("#errbox_val").val(JSON.stringify(form_bad_keys));
-	$("#errbox_goodkeys").val(JSON.stringify(form_good_keys));
-	$("#errbox_db").val(global_state.db);
-	return true;	
+  try {
+    return onScorpionSubmit();
+  } catch(e) {
+    console.log(e);
+    return false;
+  }
 });
 </script>

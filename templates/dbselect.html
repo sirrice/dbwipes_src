@@ -1,13 +1,20 @@
 <fieldset style="display: block">
-<div class="control-group">
-	<label class="control-label" for="dbname">Choose a Database</label>
-	<div class="controls">
-		<select id="dbselect" class="input-xlarge" name="db">
+<div class="form-group">
+	<label class="control-label col-md-2" for="dbname">
+    Choose a Database<br/>
+		<a class="btn-small" id="btn_schema" href="#">show schema</a>
+  </label>
+	<div class="controls col-md-10">
+    <input type="hidden" name="db" id="dbvalue" value="{{g.dbname}}" />
+		<select id="dbselect" class="form-control" name="db-dummy">
 			<option value="intel" {% if g.dbname == 'intel' %}selected="selected"{% endif %}>
 				Intel Sensor Dataset
       </option>
 			<option value="fec12"  {% if g.dbname == 'fec12' %}selected="selected"{% endif %}>
 				FEC Presidential Campaign Dataset
+			</option>
+			<option value="senate"  {% if g.dbname == 'senate' %}selected="selected"{% endif %}>
+				Senate Contributions
 			</option>
 			<option value="movielens" {% if g.dbname == 'movielens' %}selected="selected"{% endif %}>
         Movie Lens Dataset
@@ -17,23 +24,26 @@
         Bigdata dataset
       </option>-->
 		</select>
-		<a class="btn-small" id="btn_schema" href="#">show schema</a>
 	</div>
 </div>
 </fieldset>
 
-<fieldset id="fs_schema" loaded="no" loading="false" style="display:none; height: 400px; overflow-y:scroll; font-size:9pt;" >
+<fieldset id="fs_schema" loaded="no" loading="false" style="display:none; height: 400px; overflow-y:scroll; " >
+  <label class="control-label col-md-2">Schema</label>
+  <div id="fs_schema_contents" class="control col-md-10"></div>
 </fieldset>
 
 
 
 <script type="text/javascript">
 $("#dbselect").change(function() {
-	var dbname = $("#dbselect option:selected").val()
-  console.log("changed db to " + dbname)
-	global_state.db = dbname;
-  var q = canned_queries[dbname].query;
+	var selval = $("#dbselect option:selected").val()
+  var can = canned_queries[selval];
+  var q = can.query;
+	global_state.db = can.db;
   global_state.query = q;
+  $("#dbvalue").val(can.db);
+  console.log("changed db to " + can.db)
   update_query(q);
 	d3.select("#fs_schema").attr("loaded", "no").attr("loading", "false")
 	$("#btn_schema").click().click();
@@ -60,7 +70,7 @@ $(function() {
 			fsdiv.attr("loading", "true");
 			$.post('/json/schema/', {db:global_state.db}, function(schema){
 
-					render_schema("#fs_schema", schema);
+					render_schema("#fs_schema_contents", schema);
 					if (_showing)
 						$("#fs_schema").slideDown();
 					else

@@ -26,7 +26,7 @@ from merger import Merger
 from settings import *
 from bdtpartitioner import *
 
-inf = 1e10000000
+inf = float('inf')
 _logger = get_logger()
 
 
@@ -46,6 +46,7 @@ class BDT(Basic):
         self.cost_partition_good = 0.
         self.cache = None
         self.use_mtuples = kwargs.get('use_mtuples', False)
+        self.max_wait = kwargs.get('max_wait', None)
 
 
     def __hash__(self):
@@ -86,8 +87,10 @@ class BDT(Basic):
         clusters = []
         for node in nodes:
             node.rule.quality = node.influence
-            fill_in_rules((node.rule,), table, cols=self.cols)
-            cluster = Cluster.from_rule(node.rule, self.cols)
+            rules = [node.rule]
+            #rules = [r.simplify() for r in rules]
+            fill_in_rules(rules, table, cols=self.cols)
+            cluster = Cluster.from_rule(rules[0], self.cols)
             cluster.states = node.states
             cluster.cards = node.cards
             clusters.append(cluster)
@@ -102,7 +105,7 @@ class BDT(Basic):
             inf = ef.recover(ef.remove(big_state, state, n))
             bad_infs.append(inf)
         if not bad_infs:
-            return -1e100000000
+            return -inf
         
         if cluster.good_states:
             for ef, big_state, state, n in zip(self.good_states, cluster.good_states, cluster.good_cards):
@@ -117,6 +120,8 @@ class BDT(Basic):
         if len(clusters) <= 1:
             return clusters
         start = time.time()
+        for c in clusters:
+          c.error = self.influence_cluster(c)
         clusters.sort(key=lambda c: c.error, reverse=True)
         thresh = compute_clusters_threshold(clusters, nstds=1.5)
         is_mergable = lambda c: c.error >= thresh
@@ -126,12 +131,15 @@ class BDT(Basic):
         else:
             use_mtuples = self.use_mtuples
         params = dict(self.params)
-        params.update({'cols' : self.cols,
-                      'err_func' : self.err_func,
-                      'influence' : lambda c: self.influence_cluster(c),
-                      'is_mergable' : is_mergable,
-                      'use_mtuples' : use_mtuples,
-                      'learner' : self})
+        params.update({
+          'cols' : self.cols,
+          'err_func' : self.err_func,
+          'influence' : lambda c: self.influence_cluster(c),
+          'influence_components': lambda c: self.influence_cluster_components(c),
+          'is_mergable' : is_mergable,
+          'use_mtuples' : use_mtuples,
+          'learner' : self
+        })
         self.merger = Merger(**params)
         merged_clusters = self.merger(clusters)
         merged_clusters.sort(key=lambda c: c.error, reverse=True)
@@ -172,7 +180,7 @@ class BDT(Basic):
         bqueue = deque(bclusters)
         low_influence = []
 #        low_influence = [c for c in bclusters if c.error < u]
-#        bqueue = deque([c for c in bclusters if c.error >= u])
+        bqueue = deque([c for c in bclusters if c.error >= u])
 
         hclusters = [c for c in hclusters if c.error >= u]
         if not hclusters:
@@ -190,6 +198,7 @@ class BDT(Basic):
             idxs = hindex.intersection(c.bbox[0] + (0,) + c.bbox[1] + (1,))
             hcs = [hclusters[idx] for idx in idxs]
             hcs = filter(c.discretes_intersect, hcs)
+            hcs = filter(c.discretes_contains, hcs)
 
             if not hcs:
                 c.bad_inf = c.error
@@ -236,7 +245,7 @@ class BDT(Basic):
 
             if not matched:
                 c.bad_inf = c.error
-                c.good_inf = -1e10000000
+                c.good_inf = -inf
                 c.bad_states = c.states
                 c.bad_cards = c.cards
                 ret.append(c)
@@ -252,17 +261,18 @@ class BDT(Basic):
         try:
             myhash = str(hash(self))
             if myhash in self.cache and self.use_cache:
-                dicts = json.loads(self.cache[myhash])
+                dicts, nonleaf_dicts = json.loads(self.cache[myhash])
                 clusters = map(Cluster.from_dict, dicts)
-                return clusters
+                nonleaf_clusters = map(Cluster.from_dict, nonleaf_dicts)
+                return clusters, nonleaf_clusters
         except:
             pass
         finally:
             self.cache.close()
-        return None
+        return None, None
 
     @instrument
-    def cache_results(self, clusters):
+    def cache_results(self, clusters, nonleaf_clusters):
         import bsddb as bsddb3
         # save the clusters in a dictionary
         if self.use_cache:
@@ -270,7 +280,8 @@ class BDT(Basic):
             self.cache = bsddb3.hashopen('./dbwipes.cache')
             try:
                 dicts = [c.to_dict() for c in clusters]
-                self.cache[myhash] = json.dumps(dicts)
+                nonleaf_dicts = [c.to_dict() for c in nonleaf_clusters]
+                self.cache[myhash] = json.dumps((dicts, nonleaf_dicts))
             except:
                 pass
             finally:
@@ -279,32 +290,50 @@ class BDT(Basic):
 
 
     def get_partitions(self, full_table, bad_tables, good_tables, **kwargs):
-        clusters = self.load_from_cache()
+        clusters, nonleaf_clusters = self.load_from_cache()
         if clusters:
-            return clusters
+            return clusters, nonleaf_clusters
+
 
         params = dict(self.params)
         params.update(kwargs)
         params['SCORE_ID'] = self.SCORE_ID
+        max_wait = params.get('max_wait', None)
+        if max_wait:
+          params['max_wait'] = max_wait * 2. / 3.
+
 
         start = time.time()
         bpartitioner = BDTTablesPartitioner(**params)
         bnodes = list(bpartitioner(bad_tables, full_table))
-        #bnodes = list(bpartitioner([full_table], full_table))
+        bnodes = list(bpartitioner.root.leaves)
         bnodes.sort(key=lambda n: n.influence, reverse=True)
+        _logger.debug("bad nodes --> clusters")
         bclusters = self.nodes_to_clusters(bnodes, full_table)
         self.cost_partition_bad = time.time() - start
         
 
+        _logger.debug("clone badnodes")
+        htree = bpartitioner.root.clone()
+        for hnode in htree.nodes:
+          hnode.frombad = True
         _logger.debug('\npartitioning bad tables done\n')
+        inf_bound = [inf, -inf]
+        for ib in bpartitioner.inf_bounds:
+          inf_bound[0] = min(ib[0], inf_bound[0])
+          inf_bound[1] = max(ib[1], inf_bound[1])
 
         start = time.time()
         err_func = params['aggerr'].error_func.clone()
         err_func.errtype = ErrTypes(ErrTypes.EQUALTO)
         params['err_func'] = err_func
+        if isinstance(max_wait, int):
+          params['max_wait'] = max_wait / 3.
         hpartitioner = BDTTablesPartitioner(**params)
-        hpartitioner.inf_bounds = bpartitioner.inf_bounds
-        hnodes = list(hpartitioner(good_tables, full_table))
+        hpartitioner.inf_bounds = [list(inf_bound) for t in good_tables]
+        hnodes = list(hpartitioner(good_tables, full_table, root=htree))
+        hnodes = list(hpartitioner.root.leaves)
+        hnodes = filter(lambda n: not n.frombad, hnodes)
         hnodes.sort(key=lambda n: n.influence, reverse=True)
         hclusters = self.nodes_to_clusters(hnodes, full_table)
         self.cost_partition_good = time.time() - start
@@ -318,13 +347,22 @@ class BDT(Basic):
         start = time.time()
         _logger.debug('intersecting')
         clusters = self.intersect(bclusters, hclusters)
-        clusters = filter(lambda c: c.error != -1e10000000, clusters)
+        _logger.debug("done intersecting")
+        nonleaves = []
+        nonleaves.extend(bpartitioner.root.nonleaves)
+        #nonleaves.extend(hpartitioner.root.nonleaves)
+        nonleaf_clusters = self.nodes_to_clusters(
+            nonleaves,
+            full_table
+        )
+        nonleaf_clusters = filter_bad_clusters(nonleaf_clusters)
         _logger.debug('done in %d', time.time()-start)
         self.cost_split = time.time() - start
 
-        self.cache_results(clusters)
+        clusters = filter_bad_clusters(clusters)
+        self.cache_results(clusters, nonleaf_clusters)
 
-        return clusters
+        return clusters, nonleaf_clusters
 
 
 
@@ -335,14 +373,16 @@ class BDT(Basic):
         """
         self.setup_tables(full_table, bad_tables, good_tables, **kwargs)
 
-        clusters = self.get_partitions(full_table, bad_tables, good_tables, **kwargs)
+        clusters, nomerge_clusters = self.get_partitions(full_table, bad_tables, good_tables, **kwargs)
         self.all_clusters = clusters
 
         start = time.time()
         _logger.debug('merging')
-        self.final_clusters = self.merge(clusters)        
-        filt = lambda c: not math.isinf(c.error) and not math.isnan(c.error)
-        self.final_clusters = filter(filt, self.final_clusters)
+        final_clusters = self.merge(clusters)        
+        final_clusters.extend(nomerge_clusters)
+        final_clusters = filter_bad_clusters(final_clusters)
+
+        self.final_clusters = final_clusters
         self.cost_merge = time.time() - start
 
 

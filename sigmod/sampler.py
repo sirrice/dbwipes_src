@@ -18,7 +18,7 @@ from functions import StdFunc, AvgFunc
 from learners.cn2sd.refiner import *
 
 _logger = get_logger()
-inf = 1e10000000
+inf = float('inf')
 
 
 class Sampler(object):

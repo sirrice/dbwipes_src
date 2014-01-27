@@ -145,10 +145,6 @@ def parse_debug_args(db, form, dbname=None):
     attrs = json.loads(form.get('attrs', '[]'))
 
     errids = dict([(key.strip('()'), ids) for key, ids in errids.items()])
-    try:
-        erreq = float(erreq)
-    except:
-        erreq = 0.
 
     try:
       c = float(form.get('c', 0.3))
@@ -170,13 +166,18 @@ def parse_debug_args(db, form, dbname=None):
     erreq = errtype = None
     if 'errtype' in form:
       errtype = int(form['errtype'])
-      erreq = form.get('erreq', '0') # only if error type == EQUALTO
+      erreqs = json.loads(form.get('erreq', '{}')) # only if error type == EQUALTO
     
     errors = []
     for agg in qobj.select.aggregates:
         label = agg.shortname
         if label not in data:
             continue
+
+        if errtype == ErrTypes.EQUALTO:
+          erreq = erreqs[label]
+          if len(erreq) != len(data[label]):
+            raise RuntimeError("errtype was EQUAL but number of erreq values (%d) != number of aggs (%d) for agg %s" % (len(erreq), len(data[label]), label))
 
         err = AggErr(agg, extract_agg_vals(data[label]), 20, errtype, {'erreq' : erreq})
         errors.append(err)

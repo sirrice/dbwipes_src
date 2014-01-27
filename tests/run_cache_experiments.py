@@ -174,7 +174,7 @@ if __name__ == '__main__':
     cs = [.5, .4, .3, .2, .1, 0.05, 0.0] 
 
   #reset_cache()
-  cachecost_dicts = run_cache(dim, uo, cs, use_cache=cache)
+  cachecost_dicts = run_cache(dim, uo, cs, use_cache=cache, tau= [0.1, 0.5])
 
   print "c,total,partbad,partgood,split,merge,cache"
   for c, cd in zip(cs, cachecost_dicts):

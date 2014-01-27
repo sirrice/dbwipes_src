@@ -24,9 +24,13 @@
       db : "{{g.dbname}}",
       query : "",
       yrange: [Infinity, -Infinity],
+      highlighted_geoms: {},
       highlighted_keys: {},
+      plot: null,
       bad_keys: {},
+      bad_geoms: {},
       good_keys: {},
+      drawn_path: null,
       bad_tuple_ids: {}, // legacy, passed to server but not used
       walkthrough: null
     }
@@ -55,11 +59,13 @@
 
 			global_state.query = $("#query").text();
 			global_state.original_query = $("#query").text();			
-      global_state.walkthrough = new Walkthrough({})
+      global_state.walkthrough = new Walkthrough({y: 10, x: 300})
       global_state.walkthrough.close()
       global_state.plot = render_data(data, labels, global_state.query);
 
 		{% endif %}
+
+    setup_swap_events();
 	});
 
 	</script>
@@ -79,15 +85,12 @@ $("#overlay").click(function() {
 <body style="margin: 20px; z-index:1">
 
 
-<div style="display:block;">
-  {% include "query.html" %}
-</div>
+{% include "query.html" %}
 
 
 <div class="row-fluid">
 
-
-	<div class="span8" style="max-width: 850px">
+	<div class="col-md-9" style="min-width: 880px">
     <div id="aggplot">
       <div class="heading">
         <span class="legend"></span>
@@ -99,12 +102,11 @@ $("#overlay").click(function() {
   </div>
 
 	<!-- Right Column -->
-	<div class="span4">
+	<div class="col-md-3">
 		<div style="margin: 10px">{% include "filterspanel.html" %}</div>
 	</div>
 
 </div>
-
 
 {% include "walkthrough.html" %}
 
