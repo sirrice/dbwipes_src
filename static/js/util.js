@@ -180,7 +180,7 @@ var render_data = (function() {
         if (o.lim[0] != thisyrange[0] || o.lim[1] != thisyrange[1]) {
           delete _cache[cachekey];
         } else {
-          $("#aggplot").empty().append(_cache[cachekey].svg);
+          $("#aggplot").empty().append(_cache[cachekey].svg[0][0]);
           return;
         }
       }
@@ -224,16 +224,18 @@ w: 900
     });
 
     var plot = gg(spec);
-    $("#aggplot").empty();
-    plot.render(d3.select('#aggplot').append("span"));
+    var span = d3.select("body").append("span").style('display', 'none');
+    plot.render(span);//d3.select('#aggplot').append("span"));
     plot.on("done", function() {
       if (cachekey != null) {
         _cache[cachekey] = {
           lim: thisyrange,
-          svg: $("#aggplot svg"),
+          svg: plot.svg,
           plot: plot
         };
       }
+
+      $("#aggplot").empty().append(plot.svg[0][0]);
       render_drawing(plot);
     });
 
@@ -457,7 +459,7 @@ var onScorpionSubmit = function() {
     form_bad_keys[labelattr] = bad_keys.map(function(row) { 
       return row.get(labels.x);
     });
-    var form_good-keys = {};
+    var form_good_keys = {};
 
     global_state.attrs = [];
     $(".errattrs").get().forEach(function(d) {

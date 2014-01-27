@@ -73,10 +73,13 @@ class BDTTablesPartitioner(Basic):
         root = Node(SDRule(full_table, None))
       self.root = root
 
+      f = lambda (idx, samps): self.compute_infs(idx, samps)
+      all_infs = map(f, enumerate(self.tables))
+
       for leaf in root.leaves:
         parent = leaf.parent
         leaf.parent = None
-        self.grow(leaf, self.tables, self.samp_rates)
+        self.grow(leaf, self.tables, self.samp_rates, all_infs)
         leaf.parent = parent
       return self.root.nodes
 
@@ -276,8 +279,21 @@ class BDTTablesPartitioner(Basic):
         return False
 
         
+    def time_exceeded(self):
+      return (
+          self.start_time is not None and
+          self.max_wait is not None and
+          (time.time() - self.start_time) >= self.max_wait
+          )
         
     def grow(self, node, tables, samp_rates, sample_infs=None):
+        if self.time_exceeded():
+          _logger.debug("time exceeded %.2f > %d", (time.time()-self.start_time), self.max_wait)
+          return node
+
+        if self.start_time is None and node.depth >= 1:
+          self.start_time = time.time()
+
         rule = node.rule
         data = rule.examples
         datas = tables
@@ -291,13 +307,12 @@ class BDTTablesPartitioner(Basic):
 
 
         samples = datas
-        #if not node.parent:
-        samples = [self.sample(*pair) for pair in zip(datas, samp_rates)]
-
 
         if sample_infs is None:
           f = lambda (idx, samps): self.compute_infs(idx, samps)
+          samples = [self.sample(*pair) for pair in zip(datas, samp_rates)]
           sample_infs = map(f, enumerate(samples))
+
         curscore = self.get_score_for_infs(range(len(sample_infs)), sample_infs)
         est_inf = self.estimate_inf(sample_infs)
         node.set_score(est_inf)
@@ -317,6 +332,7 @@ class BDTTablesPartitioner(Basic):
           _logger.debug("score:\t%.5f\t%s", score, attr.name)
           if score == -inf: continue
           attr_scores.append((attr, new_rules, score, scores))
+
 
         if not attr_scores:
           node.states = self.get_states(datas)

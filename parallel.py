@@ -104,7 +104,7 @@ def serial_hybrid(obj, aggerr, **kwargs):
             'c' : 0.2,
             'l' : 0.6,
             'msethreshold': 0.01,
-            'max_wait':10 
+            'max_wait':5
             }
             # errperc=0.001,
             # 

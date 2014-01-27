@@ -166,7 +166,10 @@ def parse_debug_args(db, form, dbname=None):
     erreq = errtype = None
     if 'errtype' in form:
       errtype = int(form['errtype'])
-      erreqs = json.loads(form.get('erreq', '{}')) # only if error type == EQUALTO
+      try:
+		    erreqs = json.loads(form.get('erreq', '{}')) # only if error type == EQUALTO
+      except:
+        erreqs = {}
     
     errors = []
     for agg in qobj.select.aggregates:
