@@ -54,6 +54,9 @@ class BeamRefiner(object):
         for pos, (d,b,a,u) in enumerate(zip(ddists, bdists, attrs, useds)):
             if a in ignore_attrs:
                 continue            
+            b = Orange.statistics.distribution.Distribution(
+                a, rule.examples)
+            b = Orange.statistics.distribution.Continuous(b)
             yield pos,d,b,a,u
 
     def construct_new_rule(self, rule, idx, ddist, bdist, attr, used, negate):
@@ -83,21 +86,27 @@ class BeamRefiner(object):
 
 
         else:
-            avgv = Orange.data.Value(bdist.variable, bdist.avg)
-            minv = Orange.data.Value(bdist.variable, bdist.min)# - 0.5
-            maxv = Orange.data.Value(bdist.variable, bdist.max)# + 0.5
+            minv = bdist.percentile(0)
+            maxv = bdist.percentile(100)
+            avgv = bdist.percentile(50)
+            #avgv = Orange.data.Value(bdist.variable, bdist.avg)
+            #minv = Orange.data.Value(bdist.variable, bdist.min)# - 0.5
+            #maxv = Orange.data.Value(bdist.variable, bdist.max)# + 0.5
             if minv == maxv:
                 return
 
             if used:
-                minv, maxv = None, None
-                for cond in rule.filter.conditions:
-                    if cond.position == idx:
-                        minv = max(cond.min, minv) if minv else cond.min
-                        maxv = min(cond.max, maxv) if maxv else cond.max
+              # This shouldn't be an issues because rule.examples
+              # should filetr the distribution correctly
+              minv, maxv = None, None
+              for cond in rule.filter.conditions:
+                if cond.position == idx:
+                  minv = max(cond.min, minv) if minv else cond.min
+                  maxv = min(cond.max, maxv) if maxv else cond.max
 
-            block = (maxv - minv) / self.fanout
-            ranges = [(minv + i*block, minv + (i+1)*block) for i in xrange(self.fanout)]
+            #block = (maxv - minv) / self.fanout
+            #ranges = [(minv + i*block, minv + (i+1)*block) for i in xrange(self.fanout)]
+            ranges = [[minv, avgv], [avgv, maxv]]
 
             for minv, maxv in ranges:
                 if minv == maxv: # edge case

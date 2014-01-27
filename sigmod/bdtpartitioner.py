@@ -44,6 +44,7 @@ class BDTTablesPartitioner(Basic):
         self.SCORE_ID = kwargs['SCORE_ID']
         self.inf_bounds = None 
         self.min_improvement = kwargs.get('min_improvement', .01)
+        self.err_funcs = kwargs.get('err_funcs', None)
 
 
         self.max_wait = kwargs.get('max_wait', 2*60*60)
@@ -52,13 +53,16 @@ class BDTTablesPartitioner(Basic):
         self.sampler = Sampler(self.SCORE_ID)
 
 
+        if self.err_funcs is None:
+          raise RuntimeError("errfuncs is none")
+
+
     def setup_tables(self, tables, merged):
         self.merged_table = merged
         self.tables = tables
-        self.err_funcs = [self.err_func.clone() for t in tables]
 
         for ef, t in zip(self.err_funcs, self.tables):
-            ef.setup(t)
+          ef.setup(t)
 
         self.sampler = Sampler(self.SCORE_ID)
         self.samp_rates = [best_sample_size(len(t), self.epsilon)/(float(len(t))+1) for t in self.tables]
@@ -215,7 +219,8 @@ class BDTTablesPartitioner(Basic):
             counts.append(len(infs))
           else:
             std = np.std(infs)
-            scores.append(((thresh - bounds[0]) / inf_range) * (std - thresh))
+            #scores.append(((thresh - bounds[0]) / inf_range) * (std - thresh))
+            scores.append((1. - (thresh / inf_range)) * (std - thresh))
             counts.append(len(infs))
         if scores:
           return np.mean(scores)

@@ -98,14 +98,19 @@ def serial_hybrid(obj, aggerr, **kwargs):
         _, full_table = reconcile_tables(bad_tables)
 
 
+        # make sure aggerr keys and tables are consistent one last time
+        if len(bad_tables) != len(aggerr.keys):
+          raise RuntimeError("#badtables != #aggerr keys")
+
+
         params = {
-            'aggerr':aggerr,
-            'cols':cols,
-            'c' : 0.2,
-            'l' : 0.6,
-            'msethreshold': 0.01,
-            'max_wait':5
-            }
+          'aggerr':aggerr,
+          'cols':cols,
+          'c': obj.c,
+          'l' : 0.6,
+          'msethreshold': 0.01,
+          'max_wait':5
+        }
             # errperc=0.001,
             # 
             # msethreshold=0.01,
@@ -116,27 +121,28 @@ def serial_hybrid(obj, aggerr, **kwargs):
         params.update(dict(kwargs))
 
         if aggerr.agg.func.__class__ in (errfunc.SumErrFunc, errfunc.CountErrFunc):
-            klass = MR 
-            params.update({
-                'use_mtuples': False,
-                'c': 0.15,
-                'granularity': 100
-                })
+          klass = MR 
+          params.update({
+            'use_mtuples': False,
+            'granularity': 100
+            })
+          params['c'] = params.get('c', .15)
 
         else:
-            klass = BDT
-            params.update({
-                'use_cache': False,
-                'use_mtuples': False,#True,
-                'epsilon': 0.0015,
-                'min_improvement': 0.01,
-                'tau': [0.05, 0.5],
-                'c' : 0.3,
-                'p': 0.7
-                })
+          klass = BDT
+          params.update({
+            'use_cache': True,
+            'use_mtuples': False,#True,
+            'epsilon': 0.0015,
+            'min_improvement': 0.01,
+            'tau': [0.05, 0.5],
+            'p': 0.7
+            })
+          params['c'] = params.get('c', .3)
 
         #klass = SVM
         #params.update({})
+        _logger.debug("c is set to: %.4f", params['c'])
 
         start = time.time()
         hybrid = klass(**params)

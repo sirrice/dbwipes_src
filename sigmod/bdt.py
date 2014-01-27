@@ -133,7 +133,6 @@ class BDT(Basic):
         params = dict(self.params)
         params.update({
           'cols' : self.cols,
-          'err_func' : self.err_func,
           'influence' : lambda c: self.influence_cluster(c),
           'influence_components': lambda c: self.influence_cluster_components(c),
           'is_mergable' : is_mergable,
@@ -298,6 +297,7 @@ class BDT(Basic):
         params = dict(self.params)
         params.update(kwargs)
         params['SCORE_ID'] = self.SCORE_ID
+        params['err_funcs'] = self.bad_err_funcs
         max_wait = params.get('max_wait', None)
         if max_wait:
           params['max_wait'] = max_wait * 2. / 3.
@@ -324,9 +324,7 @@ class BDT(Basic):
           inf_bound[1] = max(ib[1], inf_bound[1])
 
         start = time.time()
-        err_func = params['aggerr'].error_func.clone()
-        err_func.errtype = ErrTypes(ErrTypes.EQUALTO)
-        params['err_func'] = err_func
+        params['err_funcs'] = self.good_err_funcs
         if isinstance(max_wait, int):
           params['max_wait'] = max_wait / 3.
         hpartitioner = BDTTablesPartitioner(**params)
@@ -379,6 +377,9 @@ class BDT(Basic):
         start = time.time()
         _logger.debug('merging')
         final_clusters = self.merge(clusters)        
+
+        for c in nomerge_clusters:
+          c.error = self.influence_cluster(c)
         final_clusters.extend(nomerge_clusters)
         final_clusters = filter_bad_clusters(final_clusters)
 

@@ -84,15 +84,15 @@ class Basic(object):
       self.dummy_table = Orange.data.Table(full_table.domain)
       self.bad_tables = bad_tables
       self.good_tables = good_tables
-      self.bad_err_funcs = [self.err_func.clone() for t in bad_tables]
-      self.good_err_funcs = [self.err_func.clone() for t in good_tables]
+      
+      self.bad_err_funcs = self.aggerr.bad_error_funcs()
+      self.good_err_funcs = self.aggerr.good_error_funcs(good_tables)
 
       for ef, t in zip(self.bad_err_funcs, bad_tables):
-          ef.setup(t)
+        ef.setup(t)
 
       for ef, t in zip(self.good_err_funcs, good_tables):
-          ef.errtype.errtype = ErrTypes.EQUALTO
-          ef.setup(t)
+        ef.setup(t)
 
       domain = self.full_table.domain
       attrnames = [attr.name for attr in domain]
@@ -201,77 +201,12 @@ class Basic(object):
       return infs, map(len, datas)
 
   def group_rules(self, rules, nclusters=7):
-
       rules.sort(key=lambda r: r.quality, reverse=True)
       return self.kmeans(rules[:50], nclusters)
 
-      c = self.c
-      def f((delta, count)):
-        if count == 0: return 0
-        return delta / count**c
-
-
-
-      Xs = []
-      for rule in rules:
-        deltas, counts = self.bad_influences(rule)
-        binfs = map(f, zip(deltas, counts))
-        ginfs = self.good_influences(rule)[0]
-        features = []
-        features.extend(binfs)
-        features.extend(ginfs)
-        Xs.append(features)
-      Xs = np.array(Xs)
-
-      discretizers = []
-      for colidx in xrange(Xs.shape[1]):
-        minv, maxv = min(Xs[:,colidx]), max(Xs[:,colidx])
-        if minv == maxv:
-          discretizers.append(lambda v: v)
-        blocksize = (maxv - minv) / 50.
-        discretizers.append(lambda v: (v - minv) / blocksize)
-
-      clusters = defaultdict(list)
-      for idx, feature in enumerate(Xs[:40]):
-        key = [f(v) for f, v in zip(discretizers, feature)]
-        key = tuple(key)
-        clusters[key].append(rules[idx])
-
-
-      words = ['gmmb', 'media', 'dc', 'washington']
-      get_features = lambda r: [word in str(r).lower() for word in words] + [r.quality]
-      ret = []
-      for cluster_rules in clusters.values():
-        # hack: try to find rules containing media buy or GMMC
-        features = map(get_features, cluster_rules)
-        nrules = len(cluster_rules)
-
-        best_idx = max(range(nrules), key=lambda i: features[i])
-        best = cluster_rules[best_idx]
-
-        cluster_rules = [r for r in cluster_rules if r.id != best.id]
-        best.cluster_rules.update(cluster_rules)
-        print best
-        ret.append(best)
-      return ret
- 
-
-
-
-
-      std = np.std([r.quality for r in rules])
-      mean = np.mean([r.quality for r in rules])
-      rules.sort(key=lambda r: r.quality)
-      high_quality = [r for r in rules if r.quality >= std+mean]
-      if len(high_quality) < 30:
-        high_quality = rules[-30:]
-      end = len(rules) - len(high_quality)
-      low_quality = rules[max(0, end-30): end]
-      print ("%d high quality %d low quality rules" % (len(high_quality), len(low_quality)))
-      return self.kmeans(high_quality) + self.kmeans(low_quality)
-
   def kmeans(self, rules, nclusters=7):
       if not rules: return rules
+      if len(rules) <= nclusters: return rules
 
       influences = []
       c = self.c
@@ -284,8 +219,10 @@ class Basic(object):
       for rule in rules:
         deltas, counts = self.bad_influences(rule)
         bad_infs = map(f, zip(*self.bad_influences(rule)))
-        good_infs = zip(*self.good_influences(rule))[0]
-        influences.append(list(bad_infs)+list(good_infs))
+        good_infs = []
+        if self.good_tables:
+          good_infs = zip(*self.good_influences(rule))[0]
+        influences.append(list(bad_infs) + list(good_infs))
         nbadinfs = len(bad_infs)
         ngoodinfs = len(good_infs)
       influences = np.asarray(influences)

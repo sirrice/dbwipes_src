@@ -261,15 +261,17 @@ def debug():
 
 
 
-            parallel_debug(obj,
-                           nprocesses=min(maxkeys, 4),
-                           parallelize=True,
-                           nstds=0,
-                           errperc=0.001,
-                           epsilon=0.05,
-                           msethreshold=0.15,
-                           c=0.29,
-                           complexity_multiplier=4.5)
+            parallel_debug(
+              obj,
+              nprocesses=min(maxkeys, 4),
+              parallelize=True,
+              nstds=0,
+              errperc=0.001,
+              epsilon=0.05,
+              msethreshold=0.15,
+              c=obj.c,
+              complexity_multiplier=4.5
+            )
 
 
 

@@ -252,13 +252,13 @@ class Merger(object):
                     reasons.append('.')
                     return False
                 if c.error == None:
-                    reasons.append('s')
+                    reasons.append('N')
                     return False
                 if c.error == -1e10000000 or c.error == 1e1000000000:
                     reasons.append('e')
                     return False
                 if math.isnan(c.error):
-                    reasons.append('n')
+                    reasons.append('_')
                     return False
                 if c.error <= cluster.error:
                     reasons.append('<%.4f'%c.error)
@@ -274,24 +274,27 @@ class Merger(object):
             merged = cluster
             merged_neighbor = None
             reasons = []
-            seen = []
+            seen = set()
             f = lambda tomerge: self.merge(cluster, tomerge, clusters)
             for n in tomerges:
               bseen = False
               for _ in seen:
-                if _.same(n, epsilon=0.05) or _.contains(n):
+                if _.same(n, epsilon=0.05):# or _.contains(n):
                   bseen = True
-              if bseen: continue
+              if bseen: 
+                reasons.append('s')
+                continue
 
               _ = f(n)
               if _:
-                seen.append(_)
+                seen.add(_)
               if filter_cluster(_, n):
                 if _.error > merged.error:
                   merged_neighbor = n
                   merged = _
 
             _logger.debug("neighbors: %d\t%s", len(neighbors), cluster)
+            _logger.debug("tomerges:  %d", len(tomerges))
             _logger.debug("reason   :   \t%s", ''.join(reasons))
             if not merged_neighbor:
                 break

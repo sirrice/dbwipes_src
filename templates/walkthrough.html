@@ -42,7 +42,16 @@ submit
           </div>
 				</div>			
 
-        <div style="display: none;">
+ 				<div class="form-group" id="walkthrough-c">
+          <label class="col-sm-3 control-label" for="errortypes">
+            C param
+          </label>
+          <div class="col-sm-9">
+            <input id="c" name="c" value="0.3"/>
+          </div>
+				</div>			
+
+       <div style="display: none;">
         {% for attrname, type, checked in result_schema %}
           <label class="checkbox">
             <input type="checkbox" checked class="errattrs" id="errattrs_{{attrname}}" value="{{attrname}}"/>

@@ -23,13 +23,15 @@ class ErrTypes(object):
         return err >= 0 and err <= 3
 
     def __call__(self, oldv, newv):
-        if self.errtype == ErrTypes.TOOHIGH:
-            return oldv - newv
-        if self.errtype == ErrTypes.TOOLOW:
-            return newv - oldv
-        if self.errtype == ErrTypes.EQUALTO:
-            return abs(self.erreq - newv)
-        return abs(newv - oldv)
+      if self.errtype == ErrTypes.TOOHIGH:
+          return oldv - newv
+      if self.errtype == ErrTypes.TOOLOW:
+          return newv - oldv
+      if self.errtype == ErrTypes.EQUALTO:
+        diff = abs(self.erreq - newv)
+        olddiff = abs(self.erreq - oldv)
+        return 1. - (1.+diff)/(1.+olddiff)
+      return abs(newv - oldv)
 
     def clone(self):
         return ErrTypes(self.errtype, erreq=self.erreq)
@@ -38,6 +40,7 @@ def setup_wrapper(f):
     def h(self, table):
         ret = f(self, table)
         if self.errtype.errtype == ErrTypes.EQUALTO:
+          if self.errtype.erreq is None:
             self.errtype.erreq = ret
         return ret
     return h

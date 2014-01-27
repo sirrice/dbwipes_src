@@ -151,11 +151,7 @@ def parse_debug_args(db, form, dbname=None):
     except:
       c = 0.3
 
-    #_logger.debug( "parse_args\tgood keys\t%s", goodkeys)
-    #_logger.debug( "parse_args\tattrs\t%s", attrs)
-    #_logger.debug( "parse_args\tbad tuples\t%s", errids.keys())
     obj = SharedObj(db, sql, bad_tuple_ids=errids)
-
     obj.c = c
 
     ignore_attrs = set(obj.attrnames).difference(attrs)
@@ -181,6 +177,7 @@ def parse_debug_args(db, form, dbname=None):
           erreq = erreqs[label]
           if len(erreq) != len(data[label]):
             raise RuntimeError("errtype was EQUAL but number of erreq values (%d) != number of aggs (%d) for agg %s" % (len(erreq), len(data[label]), label))
+          print "erreq for %s: %s" % (label, ', '.join(map(str,erreq)))
 
         err = AggErr(agg, extract_agg_vals(data[label]), 20, errtype, {'erreq' : erreq})
         errors.append(err)
@@ -236,7 +233,7 @@ class SharedObj(object):
         self.merged_tables = {}
         self.rules = {}
         self.clauses = {}
-        self.c = 0.3
+        self.c = kwargs.get('c', 0.3)
         
         
     def get_tuples(self, keys, attrs=None):

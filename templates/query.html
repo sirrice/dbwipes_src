@@ -14,6 +14,10 @@ var canned_queries = {
     query: "SELECT sum(dis_amo), can_nam as can_nam FROM senate WHERE (dis_dat) > '2000-01-01' GROUP BY can_nam ORDER BY sum(dis_amo) DESC",
     db: "fec12"
   },
+  sigmod: {
+    query: "SELECT sum(v), g FROM data_3_3_1000_0d50_80uo  GROUP BY g;",
+    db: "sigmod"
+  },
   movielens: {
     query: "SELECT avg(rating), title FROM ratings WHERE adventure = 1 GROUP BY title",
     db: "movielens"

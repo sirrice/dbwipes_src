@@ -2,10 +2,18 @@
 Array.prototype.clone = function() {return this.slice(0);};
 
 function error(msg) {
-	div = $("<div/>").attr({'class':"alert alert-error"})
-	a = $("<a/>").addClass('close').attr('data-dismiss', 'alert').text('x')
-	div.append(a).text(msg);
-	$("#messagebox").append(div);
+  var div = d3.select("#messagebox").append("div")
+    .classed('alert alert-danger',true)
+    .text(msg);
+
+  div.append("a")
+    .classed('close', true)
+    .attr({
+      type: 'button',
+      'aria-hidden': true
+    })
+    .html("&times;")
+    .on('click', function() { div.remove() })
 }
 
 var onSelect = (function() {
@@ -180,7 +188,8 @@ var render_data = (function() {
         if (o.lim[0] != thisyrange[0] || o.lim[1] != thisyrange[1]) {
           delete _cache[cachekey];
         } else {
-          $("#aggplot").empty().append(_cache[cachekey].svg[0][0]);
+          $("#aggplot").empty().append(o.svg[0][0]);
+          render_drawing(o.plot);
           return;
         }
       }
@@ -407,6 +416,13 @@ var onScorpionSubmit = function() {
 		error("Please select 1+ points to debug!")
 		return false;
 	}
+  var c = +$("#c").val();
+  if (!_.isFinite(+c) ) {
+    error("c parameter is not a finite number: " + c);
+  }
+  $("#c").val(+c);
+
+
   
   if (global_state.drawn_path != null) {
     var n = 0;
@@ -448,7 +464,9 @@ var onScorpionSubmit = function() {
     var plot = global_state.plot;
     var pt = plot.workflow.sinks()[0].inputs[0];
     var set = pt.right().any('scales');
-    var yscale = set.get('y');
+    var yscale = set.get('y').clone()
+    var yr = yscale.range();
+    yscale.range([yr[1], yr[0]]);
     var erreq = {};
     erreq[labelattr] = _.map(ys, yscale.invert.bind(yscale));
 
@@ -475,9 +493,15 @@ var onScorpionSubmit = function() {
     $("#errbox_goodkeys").val(JSON.stringify(form_good_keys));
     $("#errbox_db").val(global_state.db);
 
+    if (erreq[labelattr].length != form_bad_keys[labelattr].length) {
+      error("please draw a line across al of the outlier points");
+      return false;
+    }
 
 
-    return false;
+
+
+    return true;
   }
 
 
