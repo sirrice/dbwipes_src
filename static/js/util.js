@@ -471,13 +471,24 @@ var onScorpionSubmit = function() {
     erreq[labelattr] = _.map(ys, yscale.invert.bind(yscale));
 
 
+    //
     // ok setup all of the form inputs
+    //
+
     $("#errtype_1").attr('checked', true);
     var form_bad_keys = {};
     form_bad_keys[labelattr] = bad_keys.map(function(row) { 
       return row.get(labels.x);
     });
+
+    var good_keys = [];
     var form_good_keys = {};
+    if (labelattr in global_state.good_keys) {
+      good_keys = global_state.good_keys[labelattr];
+      form_good_keys[labelattr] = good_keys.map(function(row) {
+        return row.get(labels.x);
+      });
+    }
 
     global_state.attrs = [];
     $(".errattrs").get().forEach(function(d) {
@@ -497,9 +508,6 @@ var onScorpionSubmit = function() {
       error("please draw a line across al of the outlier points");
       return false;
     }
-
-
-
 
     return true;
   }

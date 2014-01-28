@@ -135,7 +135,7 @@ def serial_hybrid(obj, aggerr, **kwargs):
             'use_mtuples': False,#True,
             'epsilon': 0.0015,
             'min_improvement': 0.01,
-            'tau': [0.05, 0.5],
+            'tau': [0.08, 0.5],
             'p': 0.7
             })
           params['c'] = params.get('c', .3)

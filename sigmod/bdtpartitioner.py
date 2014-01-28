@@ -204,6 +204,10 @@ class BDTTablesPartitioner(Basic):
         score = self.get_score_for_infs([idx]*len(allinfs), allinfs)
         scores.append(score)
 
+      for r in rules:
+        allinfs = rule2infs[r]
+        r.quality = self.estimate_inf(allinfs)
+
       scores = filter(lambda s: s!=-inf, scores)
       return scores
 
@@ -311,8 +315,11 @@ class BDTTablesPartitioner(Basic):
           return node
 
 
-        samples = datas
+        #
+        # Precompute influences and scores
+        #
 
+        samples = datas
         if sample_infs is None:
           f = lambda (idx, samps): self.compute_infs(idx, samps)
           samples = [self.sample(*pair) for pair in zip(datas, samp_rates)]
@@ -329,12 +336,16 @@ class BDTTablesPartitioner(Basic):
             return node
 
 
+        #
+        # compute scores for each attribute to split on
+        #
         attr_scores = []
         for attr, new_rules in self.child_rules(rule):
+          if not new_rules: continue
           scores = self.get_scores(new_rules, samples)
           score = self.merge_scores(scores)
           score = self.adjust_score(score, node, attr, new_rules)
-          _logger.debug("score:\t%.5f\t%s", score, attr.name)
+          _logger.debug("score:\t%.5f\t%s\t%s", score, attr.name, new_rules[0])
           if score == -inf: continue
           attr_scores.append((attr, new_rules, score, scores))
 
@@ -357,8 +368,10 @@ class BDTTablesPartitioner(Basic):
         for attr, new_rules, score, scores in attr_scores[:ncands]:
           data2infs, rule2infs, rule2datas = self.databyrule2infs(new_rules, datas)
           new_srses = self.update_sample_rates(new_rules, data2infs, samp_rates)
+          new_pairs = zip(new_rules, new_srses)
+          new_pairs.sort(key=lambda (new_r, new_s): new_r.quality, reverse=True)
 
-          for new_rule, new_srs in zip(new_rules, new_srses):
+          for new_rule, new_srs in new_pairs:
             child = Node(new_rule)
             child.prev_attr = attr
             child.parent = node

@@ -58,7 +58,9 @@ class BDT(Basic):
                 self.tau,
                 self.p,
                 self.err_func.__class__.__name__,
-                self.tablename
+                self.tablename,
+                self.aggerr.keys,
+                self.max_wait
                 ]
         components = map(str, components)
         return hash('\n'.join(components))

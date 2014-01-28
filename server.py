@@ -270,7 +270,8 @@ def debug():
               epsilon=0.05,
               msethreshold=0.15,
               c=obj.c,
-              complexity_multiplier=4.5
+              complexity_multiplier=4.5,
+              max_wait=20
             )
 
 
