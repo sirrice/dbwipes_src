@@ -45,6 +45,7 @@ class Cluster(object):
         self.idxs = []
 
         # influence components (delta and counts)
+        self.inf_state = None
         self.bds = None
         self.bcs = None
         self.gds = None
@@ -78,6 +79,13 @@ class Cluster(object):
         c.cols = map(str, c.cols)
         c.discretes = dict((str(k),set([str(v) if isinstance(v,basestring) else v for v in vs])) for k,vs in c.discretes)
         return c
+
+    def __cmp__(self, o):
+      if self.error < o.error:
+        return -1
+      if self.error > o.error:
+        return 1
+      return len(str(self)) - len(str(o))
 
     def to_dict(self):
         d = dict(self.__dict__)
@@ -261,10 +269,10 @@ class Cluster(object):
 
     def same(self, o, epsilon=0.):
         for key in o.discretes.keys():
-            if key in self.discretes:
-                diff = set(o.discretes[key]).difference(self.discretes[key])
-                if len(diff):
-                    return False
+          if key in self.discretes:
+            diff = set(o.discretes[key]).intersection(self.discretes[key])
+            if len(diff) != len(o.discretes[key]) or len(diff) != len(self.discretes[key]):
+              return False
 
         return box_same(o.bbox, self.bbox, epsilon=epsilon)
 
@@ -364,6 +372,7 @@ class Cluster(object):
 
         rule = SDRule(table, None, conditions=conds)
         rule.quality = rule.score = self.error
+        rule.inf_state = self.inf_state
         return rule
 
     def project(self, cols):
@@ -423,7 +432,7 @@ def filter_bad_clusters(clusters):
 def compute_clusters_threshold(clusters, nstds=1.):
     if not clusters:
         return 0.
-    errors = [c.error for c in clusters]
+    errors = [c.error for c in filter_bad_clusters(clusters)]
     return np.percentile(errors, 90)
     npts = [c.npts for c in clusters]
     #npts = [1] * len(clusters)
@@ -455,7 +464,12 @@ def filter_top_clusters(clusters, nstds=1.):
 def normalize_cluster_errors(clusters):
     if not clusters:
         return clusters
-    errors = [c.error for c in clusters]
+    errors = np.array([c.error for c in clusters])
+    mean, std = np.mean(errors), np.std(errors)
+    if std == 0: std = 1
+    for c in clusters:
+      c.error = (c.error - mean) / std
+    return clusters
     mine, maxe = min(errors), max(errors)
     div = 1. if maxe == mine else (maxe-mine)
 

@@ -9,6 +9,7 @@
 import time
 import pdb
 import sys
+import orngTree
 import Orange
 import orange
 import heapq
@@ -35,6 +36,10 @@ _logger = get_logger()
 
 class NDT(Basic):
 
+    def __init__(self, **kwargs):
+        Basic.__init__(self, **kwargs)
+        # values: c45, or, dt, rt
+        self.tree_alg = kwargs.get('tree_alg', 'rt')
 
     def __call__(self, full_table, bad_tables, good_tables, **kwargs):
         """
@@ -50,50 +55,50 @@ class NDT(Basic):
                 "INFCLASS",
                 vals=['0', '1'])
 
+        start = time.time()
+        self.compute_influences(self.bad_tables, self.bad_err_funcs)
+        self.compute_influences(self.good_tables, self.good_err_funcs)
+        self.cost_compute_inf = time.time() - start
+
+
 
         start = time.time()
-        _logger.debug( "computing cutoffs" )
-        bad_cutoff = self.influence_cutoff(self.bad_tables, self.bad_err_funcs)
-        good_cutoff = self.influence_cutoff(self.good_tables, self.good_err_funcs)
-        _logger.debug( "cutoffs\t%f\t%f" , bad_cutoff, good_cutoff)
-        self.cost_cutoff = time.time() - start
+        if self.tree_alg == 'c45':
+          table, rules = self.c45_rules()
+        elif self.tree_alg == 'or':
+          table, rules = self.orange_dt_rules()
+        elif self.tree_alg == 'dt':
+          table, rules = self.sk_dt_rules(max_depth=12)
+        elif self.tree_alg == 'rt':
+          table, rules = self.sk_rt_rules(max_depth=12)
+        else:
+          _logger.warn("unknown NDT algorithm %s.  Defaulting to regression tree", self.tree_alg)
+          table, rules = self.sk_rt_rules(max_depth=12)
+        self.cost_learn = time.time() - start
 
 
-        import orngTree
-        start = time.time()
-        _logger.debug( "creating training data")
-        training = self.create_training(bad_cutoff, good_cutoff)
+        #
+        # ok now convert rules to clusters
+        #
 
+        _logger.debug( "got %d rules", len(rules))
+        fill_in_rules(rules, table, cols=self.cols)
 
-        class_var = training.domain[self.CLASS_ID]
-        skdata = rm_attr_from_domain(training, [class_var])
-        Xs = np.array([ [v.value for v in row] for row in skdata ])
-        Ys = np.array([int(row[class_var].value) for row in training])
-
-        clf = sktree.DecisionTreeClassifier()
-        clf.fit(Xs, Ys)
-        rules = self.sktree_to_rules(skdata, clf.tree_)
-        fill_in_rules(rules, skdata, cols=self.cols)
-        print '\n'.join(map(str, rules))
-
-
-        #_logger.debug( "training on %d points" , len(training))
-        tree = orngTree.TreeLearner(training)
-        rules = tree_to_clauses(training, tree.tree)
-        #_logger.debug('\n'.join(map(lambda r: '\t%s' % r, rules)))
-
-#        tree = Orange.classification.tree.C45Learner(training, cf=0.001)
-#        rules = c45_to_clauses(training, tree.tree)
         self.cost_learn = time.time() - start
 
         clusters = [Cluster.from_rule(rule, self.cols) for rule in rules]
         for cluster in clusters:
           cluster.error = self.influence_cluster(cluster)
-        clusters = filter(lambda c: c.error != -inf, clusters)
+        clusters = filter_bad_clusters(clusters)
+        clusters.sort(key=lambda c: c.error, reverse=True)
+        print '\n'.join(map(str, clusters[:5]))
 
         self.all_clusters = self.final_clusters = clusters
         return self.final_clusters
 
+        #
+        # merge the clusters
+        #
         thresh = compute_clusters_threshold(clusters, nstds=1.5)
         is_mergable = lambda c: c.error >= thresh
 
@@ -111,22 +116,100 @@ class NDT(Basic):
         merged_clusters.sort(key=lambda c: c.error, reverse=True)
 
 
+        clusters.extend(merged_clusters)
+        normalize_cluster_errors(clusters)
+        clusters = list(set(clusters))
         self.all_clusters = clusters
         self.final_clusters = merged_clusters
 
         self.costs = {
-            'cost_cutoff' : self.cost_cutoff,
             'cost_learn' : self.cost_learn
         }
         return self.final_clusters
 
+    def orange_dt_rules(self):
+
+      start = time.time()
+      bad_cutoff = self.influence_cutoff(self.bad_tables)
+      good_cutoff = self.influence_cutoff(self.good_tables)
+      _logger.debug( "cutoffs\t%f\t%f" , bad_cutoff, good_cutoff)
+      self.cost_cutoff = time.time() - start
+
+      _logger.debug( "creating training data")
+      training = self.create_training(bad_cutoff, good_cutoff)
+
+
+      #_logger.debug( "training on %d points" , len(training))
+      tree = orngTree.TreeLearner(training)
+      rules = tree_to_clauses(training, tree.tree)
+      #_logger.debug('\n'.join(map(lambda r: '\t%s' % r, rules)))
+
+      # tree = Orange.classification.tree.C45Learner(training, cf=0.001)
+      # rules = c45_to_clauses(training, tree.tree)
+      return training, rules
+
+
+
+    def c45_rules(self):
+      start = time.time()
+      bad_cutoff = self.influence_cutoff(self.bad_tables)
+      good_cutoff = self.influence_cutoff(self.good_tables)
+      _logger.debug( "cutoffs\t%f\t%f" , bad_cutoff, good_cutoff)
+      self.cost_cutoff = time.time() - start
+
+      _logger.debug( "creating training data")
+      training = self.create_training(bad_cutoff, good_cutoff)
+
+      tree = Orange.classification.tree.C45Learner(training, cf=0.001)
+      rules = c45_to_clauses(training, tree.tree)
+      return training, rules
+
+
+
+    def sk_dt_rules(self, **kwargs):
+      start = time.time()
+      _logger.debug( "computing cutoffs" )
+      bad_cutoff = self.influence_cutoff(self.bad_tables)
+      good_cutoff = self.influence_cutoff(self.good_tables)
+      _logger.debug( "cutoffs\t%f\t%f" , bad_cutoff, good_cutoff)
+      self.cost_cutoff = time.time() - start
+
+
+      _logger.debug( "creating training data")
+      training = self.create_training(bad_cutoff, good_cutoff)
+
+      class_var = training.domain[self.CLASS_ID]
+      skdata = rm_attr_from_domain(training, [class_var])
+      Xs = np.array([ [v.value for v in row] for row in skdata ])
+      Ys = np.array([int(row[class_var].value) for row in training])
+
+      clf = sktree.DecisionTreeClassifier(criterion='entropy')
+      clf.fit(Xs, Ys)
+      rules = self.sktree_to_rules(skdata, clf.tree_, **kwargs)
+      return skdata, rules
+
+
+    def sk_rt_rules(self, **kwargs):
+      orTable, Xs, Ys = self.create_regression_training()
+      clf = sktree.DecisionTreeRegressor(
+          criterion='mse',
+          min_samples_split=10,
+          min_samples_leaf=5
+      )
+      clf.fit(Xs, Ys)
+      rules = self.sktree_to_rules(orTable, clf.tree_, **kwargs)
+      return orTable, rules
+
+
 
     # assumes everything is continuous!!!
-    def sktree_to_rules(self, table, tree, node_id=0, parent=None, clauses=None):
-      def clauses_to_rule(table, clauses):
+    def sktree_to_rules(self, table, tree, node_id=0, parent=None, clauses=None, max_depth=9, bdists=None):
+      def clauses_to_rule(table, bdists, clauses):
         attr_to_ranges = {}
         for attridx, minval, maxval in clauses:
-          cur = attr_to_ranges.get(attridx, [-inf, inf])
+          attr = table.domain[attridx]
+          dist = bdists[attr]
+          cur = attr_to_ranges.get(attridx, [dist.min, dist.max])
           cur = (max(cur[0], minval), min(cur[1], maxval))
           attr_to_ranges[attridx] = cur
 
@@ -147,10 +230,14 @@ class NDT(Basic):
       left = tree.children_left[node_id]
       right = tree.children_right[node_id]
 
-      if left < 0:
+      if bdists is None:
+        bdists = Orange.statistics.basic.Domain(table)
+      
+
+      if left < 0 or len(clauses) >= max_depth:
         val = tree.value[node_id]
         #if val[0][1] > val[0][0]:
-        return [clauses_to_rule(table, clauses)]
+        return [clauses_to_rule(table, bdists, clauses)]
       else:
         attridx = tree.feature[node_id]
         threshold = tree.threshold[node_id]
@@ -158,33 +245,59 @@ class NDT(Basic):
         rightclause = (attridx, threshold, inf)
 
         clauses.append(leftclause)
-        ret.extend(self.sktree_to_rules(table, tree, left, node_id, clauses))
+        ret.extend(self.sktree_to_rules(table, tree, left, node_id, clauses, max_depth, bdists))
         clauses.pop()
 
         clauses.append(rightclause)
-        ret.extend(self.sktree_to_rules(table, tree, right, node_id, clauses))
+        ret.extend(self.sktree_to_rules(table, tree, right, node_id, clauses, max_depth, bdists))
         clauses.pop()
       return ret
 
 
       
  
-
-    def influence_cutoff(self, tables, err_funcs):
+    def compute_influences(self, tables, err_funcs):
         infs = []
         for table, err_func in zip(tables, err_funcs):
-            for row in table:
-                inf = err_func([row])
-                row[self.SCORE_ID] = inf
-                infs.append(inf)
-        u = np.mean(infs)
+          for row in table:
+            inf = err_func([row])
+            row[self.SCORE_ID] = inf
+            infs.append(inf)
+        return infs
+
+    def influence_cutoff(self, tables, percentile=80):
+        infs = []
+        for table in tables:
+          for row in table:
+            infs.append(float(row[self.SCORE_ID]))
+
+        #u = np.mean(infs)
         std = np.std(infs)
-        return u + std * 2
+        #return u + std * 2
+        return np.percentile(infs, percentile)
 
     def label_bad_tuples(self, cutoff):
         pass
 
+
+    def create_regression_training(self):
+        domain = Orange.data.Domain(self.bad_tables[0].domain)
+        score_var = domain[self.SCORE_ID]
+        newtable = Orange.data.Table(domain)
+
+        Ys = []
+        for t in chain(self.bad_tables, self.good_tables):
+          newtable.extend(t)
+          for r in t:
+            Ys.append(float(r[self.SCORE_ID].value))
+
+        Xs = np.array([ [v.value for v in row] for row in newtable])
+        Ys = np.array(Ys)
+        return newtable, Xs, Ys
+
+
     def create_training(self, bad_cutoff, good_cutoff):
+        import orngTree
         extend_bad = lambda rule, t: rule.cloneAndAddContCondition(
                 t.domain[self.SCORE_ID],
                 bad_cutoff,
@@ -232,10 +345,13 @@ class NDT(Basic):
 
 
 
-def c45_to_clauses(table, node, clauses=None):
+def c45_to_clauses(table, node, bdists=None, clauses=None):
     clauses = clauses or []
     if not node:
-        return []
+      return []
+    if bdists is None:
+      bdists = Orange.statistics.basic.Domain(table)
+
     
     if node.node_type == 0: # Leaf
         quality = node.class_dist[1] 
@@ -252,16 +368,16 @@ def c45_to_clauses(table, node, clauses=None):
 
     if node.node_type == 1: # Branch
         for branch, val in zip(node.branch, var.values):
-            clause = create_clause(table, var,  val)
+            clause = create_clause(table, var,  val, bdists)
             clauses.append( clause )
-            ret.extend( c45_to_clauses(table, branch, clauses) )
+            ret.extend( c45_to_clauses(table, branch, bdists, clauses) )
             clauses.pop()
 
     elif node.node_type == 2: # Cut
         for branch, comp in zip(node.branch, ['<=', '>', '<', '>=']):
-            clause = create_clause(table, var,  node.cut, comp)
+            clause = create_clause(table, var,  node.cut, bdists, comp)
             clauses.append( clause )
-            ret.extend( c45_to_clauses(table, branch, clauses) )
+            ret.extend( c45_to_clauses(table, branch, bdists, clauses) )
             clauses.pop()
 
     elif node.node_type == 3: # Subset
@@ -269,11 +385,11 @@ def c45_to_clauses(table, node, clauses=None):
             inset = filter(lambda a:a[1]==i, enumerate(node.mapping))
             inset = [var.values[j[0]] for j in inset]
             if len(inset) == 1:
-                clause = create_clause(table, var, inset[0])
+                clause = create_clause(table, var, inset[0], bdists)
             else:
-                clause = create_clause(table, var, inset)
+                clause = create_clause(table, var, inset, bdists)
             clause.append( clause )
-            ret.extend( c45_to_clauses(table, branch, clauses) )
+            ret.extend( c45_to_clauses(table, branch, bdists, clauses) )
             clauses.pop()
 
     ret = filter(lambda c: c, ret)
@@ -281,7 +397,7 @@ def c45_to_clauses(table, node, clauses=None):
 
 
 
-def create_clause(table, attr, val, cmp='='):
+def create_clause(table, attr, val, bdists, cmp='='):
     cmps = ['<', '<=', '>', '>=', '=']
     if attr.varType == Orange.feature.Type.Discrete:
         if not isinstance(val, (list, tuple)):
@@ -307,8 +423,9 @@ def create_clause(table, attr, val, cmp='='):
         if not isnumerical:
             val = float(val)
 
+        bdist = bdists[attr]
 
-        minv, maxv = -1e10000, 1e10000
+        minv, maxv = bdist.min, bdist.max
         op = None
         if cmp == '>=':
             minv = val
@@ -368,11 +485,13 @@ def rule_from_clauses(table, clauses):
     return SDRule(table, None, conds)
 
 
-def tree_to_clauses(table, node, clauses=None, strclauses=None):
+def tree_to_clauses(table, node, bdists=None, clauses=None, strclauses=None):
     clauses = clauses or []
     strclauses = strclauses or []
     if not node:
         return []
+    if bdists is None:
+      bdists = Orange.statistics.basic.Domain(table)
 
     ret = []
     if node.branch_selector:
@@ -383,11 +502,11 @@ def tree_to_clauses(table, node, clauses=None, strclauses=None):
             if ( bdesc.startswith('>') or 
                  bdesc.startswith('<') or 
                  bdesc.startswith('=') ):
-                clauses.append( create_clause(table, var, bdesc))
+                clauses.append( create_clause(table, var, bdesc, bdists))
             else:
-                clauses.append( create_clause(table, var, bdesc) )
+                clauses.append( create_clause(table, var, bdesc, bdists) )
             strclauses.append((varname, bdesc))
-            ret.extend( tree_to_clauses(table, branch, clauses, strclauses) )
+            ret.extend( tree_to_clauses(table, branch, bdists, clauses, strclauses) )
             clauses.pop()
     else:
         major_class = node.node_classifier.default_value

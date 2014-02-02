@@ -31,6 +31,7 @@ class SDRule(object) :
         self.quality = None
         self.score = 0.
         self.score_norm = None
+        self.inf_state = None
         self.isbest = False
 
         self.stats_mean = None
@@ -350,7 +351,11 @@ class SDRule(object) :
         return 0
 
     def __hash__(self):
-        return hash(self.ruleToString())
+        condStrs = self.toCondStrs()
+        condStrs.append('rule')
+        condStrs.sort()
+        return hash(tuple(condStrs))
+
 
     def __eq__(self, o):
         return hash(self) == hash(o)
@@ -453,13 +458,25 @@ class SDRule(object) :
             if s:
                 ret.append(s)
 
-
+        ret.sort()
         rule = ' and '.join(ret)
         if self.filter.negate:
             rule = '%s (Neg)' % rule
-        return rule
-        #ret = [rule, '->', self.data.domain.classVar.name, '=', str(self.classifier.defaultVal)]
-        #return ' '.join(ret)
+        return '%.4f  %s' % (self.quality, rule)
+
+    def toCondStrs(self):
+        domain = self.data.domain
+        ret = []
+        if self.filter.negate:
+          ret.append('neg')
+
+        for i,c in enumerate(self.filter.conditions):
+            s = self.condToString(c)
+            if s:
+                ret.append(s)
+
+        return ret
+
 
     
     def printRule(self):

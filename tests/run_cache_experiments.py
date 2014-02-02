@@ -2,7 +2,7 @@ import os
 from sqlalchemy import *
 from common import *
 
-def print_clusters(sub, dim, clusters, tuples=[], title=''):
+def print_clusters(sub, dim, clusters=[], tuples=[], title=''):
   xattr = 'a_%d' % dim
   yattr = 'a_%d' % (dim+1)
 
@@ -27,7 +27,7 @@ def print_clusters(sub, dim, clusters, tuples=[], title=''):
       y = [0, 100]
 
     c = cm.jet(cluster.error)
-    r = Rect((x[0], y[0]), x[1]-x[0], y[1]-y[0], alpha=max(0.2,cluster.error), ec=c, fill=False, lw=1.5)
+    r = Rect((x[0], y[0]), x[1]-x[0], y[1]-y[0], alpha=min(1., max(0.2,cluster.error)), ec=c, fill=False, lw=1.5)
     sub.add_patch(r)
 
   if tuples:
@@ -49,7 +49,7 @@ def print_all_clusters(pp, db, tablename, learner, c):
     clusters = [cluster.clone() for cluster in learner.final_clusters]
     clusters = normalize_cluster_errors(clusters)
     best_clusters = sorted(clusters, key=lambda c: c.error, reverse=True)
-    best_clusters = best_clusters[:1]
+    best_clusters = best_clusters[:2]
     best_clusters[0].error = 1
     tuples = get_tuples_in_bounds(db, tablename, [], 'g = 7')
 
@@ -62,13 +62,15 @@ def print_all_clusters(pp, db, tablename, learner, c):
       plt.savefig(pp, format='pdf')
 
   except Exception as e:
-    print e
+    import traceback
+    traceback.print_exc()
     pdb.set_trace()
     pass
 
 
 
-def run(pp, dataset, cutoff, **params):
+def run(pp, cutoff, **params):
+  dataset = params['dataset']
   test_datas = get_test_data(datasetnames[dataset])
   tablename = test_datas[-1]
   dbname = test_datas[0]
@@ -121,7 +123,7 @@ def warmup(dim, cutoff, **kwargs):
 
 
 def run_cache(dim, cutoff, cs, **kwargs):
-  dataset = "data_%d_%d_1000_0d50_%duo" % (dim, dim, cutoff)
+  dataset = kwargs.get('dataset', "data_%d_%d_1000_0d50_%duo" % (dim, dim, cutoff))
 
   params = {
     'klass':BDT, 
@@ -136,7 +138,8 @@ def run_cache(dim, cutoff, cs, **kwargs):
     'max_wait':20,
     'naive':False,
     'use_mtuples':False,
-    'use_cache': False
+    'use_cache': False,
+    dataset: dataset
   }
   params.update(kwargs)
 
@@ -145,7 +148,7 @@ def run_cache(dim, cutoff, cs, **kwargs):
   cost_dicts = []
   for c in cs:
     params['c'] = c
-    cost_dict = run(pp, dataset, cutoff, **params)
+    cost_dict = run(pp, cutoff, **params)
     cost_dicts.append(cost_dict)
 
   pp.close()
@@ -174,16 +177,22 @@ if __name__ == '__main__':
     cs = [.5, .4, .3, .2, .1, 0.05, 0.0] 
 
   #reset_cache()
-  cachecost_dicts = run_cache(dim, uo, cs, use_cache=cache, tau= [0.1, 0.5])
+  #cachecost_dicts = run_cache(dim, uo, cs, l=0.95, tree_alg='rt', klass=NDT, use_cache=cache, tau= [0.1, 0.5])
+
+  cachecost_dicts = run_cache(dim, uo, cs, l=0.95, tree_alg='rt', klass=BDT, use_cache=cache, tau= [0.1, 0.5],
+      dataset='data2clust_2_2_2k_vol15_uo80')
+
+
+
 
   print "c,total,partbad,partgood,split,merge,cache"
   for c, cd in zip(cs, cachecost_dicts):
     print "%.4f,%.4f,%.4f,%.4f,%.4f,%.4f,%d" % (
       c, 
-      cd['cost_total'],
-      cd['cost_partition_bad'],
-      cd['cost_partition_good'],
-      cd['cost_split'],
-      cd['cost_merge'], 
+      cd.get('cost_total', -1),
+      cd.get('cost_partition_bad', -1),
+      cd.get('cost_partition_good', -1),
+      cd.get('cost_split', -1),
+      cd.get('cost_merge', -1), 
       cache
     )

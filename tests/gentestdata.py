@@ -41,7 +41,7 @@ datasetnames = DatasetNames()
 
 def get_test_data(name, **kwargs):
 
-    if name.startswith('data_'):
+    if name.startswith('data_') or name.startswith('data2c'):
         testdata = get_sigmod_data(name)
     else:
         cmd = 'testdata = get_%s()' % name
@@ -60,7 +60,7 @@ def get_test_data(name, **kwargs):
         dbname = 'fec12'
     elif 'fec' in name:
         dbname = 'fec'
-    elif name.startswith('data_'):
+    elif name.startswith('data_') or name.startswith('data2c'):
         dbname = 'sigmod'
     else:
         raise RuntimeException("i don't understand this test data: %s", name)

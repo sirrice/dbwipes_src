@@ -239,8 +239,12 @@ class Merger(object):
             
             rms, tomerges = set(), list()
             for n in neighbors:
-              if n in rms or cluster.contains(n) or cluster.same(n, epsilon=0.02):
+              if n == cluster: 
+                  continue
+              if n in rms or  cluster.same(n, epsilon=0.01):
                   rms.add(n)
+                  continue
+              if cluster.contains(n):
                   continue
               tomerges.append(n)
 

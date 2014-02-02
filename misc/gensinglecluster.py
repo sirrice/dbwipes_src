@@ -43,35 +43,77 @@ def rand_point(ndim):
     return [random.random() * 100 for i in xrange(ndim)]
 
 
+def gen_multi_outliers(npts, ndim, kdim, vol, uh=10, sh=5, uo=90, so=5):
+  # completely reproducable
+  random.seed(0)
+
+  nclusters = 2
+  norm_gen, mid_gen, outlier_gen = make_gen(uh, sh), make_gen((uo-uh)/2+uh, so),  make_gen(uo, so)
+  med_boxes = [rand_box(ndim, kdim, vol/2.) for i in xrange(nclusters)]
+  high_boxes = [rand_box(ndim, kdim, vol, bounds=med_box) for med_box in med_boxes]
+
+  for med_box in med_boxes:
+    print >>sys.stderr, map(lambda arr: map(int, arr), med_box)
+  for high_box in high_boxes:
+    print >>sys.stderr, map(lambda arr: map(int, arr), high_box)
+
+
+  schema = ['a_%d' % i for i in xrange(ndim)] + ['g', 'v']
+
+  def generate():
+    for gid in xrange(10):
+      for i in xrange(npts):
+        pt = rand_point(ndim)
+
+        # add group and value
+        pt.append(gid)
+
+        if gid >= 5 and any([in_box(pt, mb) for mb in med_boxes]):
+          if any([in_box(pt, hb) for hb in high_boxes]):
+            pt.append(outlier_gen())
+          else:
+            pt.append(mid_gen())
+        else:
+          pt.append(norm_gen())
+
+        yield pt
+
+  return med_boxes, high_boxes, schema, generate()
+
+
+
 def gen_points(npts, ndim, kdim, vol, uh=10, sh=5, uo=90, so=5):
-    norm_gen, mid_gen, outlier_gen = make_gen(uh, sh), make_gen((uo-uh)/2+uh, so),  make_gen(uo, so)
-    outlier_box = rand_box(ndim, kdim, vol)
-    super_box = rand_box(ndim, kdim, vol, bounds=outlier_box)
-    print >>sys.stderr, outlier_box
-    print >>sys.stderr, super_box
+  # completely reproducable
+  random.seed(0)
+
+  norm_gen, mid_gen, outlier_gen = make_gen(uh, sh), make_gen((uo-uh)/2+uh, so),  make_gen(uo, so)
+  outlier_box = rand_box(ndim, kdim, vol)
+  super_box = rand_box(ndim, kdim, vol, bounds=outlier_box)
+  print >>sys.stderr, map(lambda arr: map(int, arr), outlier_box)
+  print >>sys.stderr, map(lambda arr: map(int, arr), super_box)
 
 
-    schema = ['a_%d' % i for i in xrange(ndim)] + ['g', 'v']
+  schema = ['a_%d' % i for i in xrange(ndim)] + ['g', 'v']
 
-    def generate():
-        for gid in xrange(10):
-            for i in xrange(npts):
-                pt = rand_point(ndim)
+  def generate():
+    for gid in xrange(10):
+      for i in xrange(npts):
+        pt = rand_point(ndim)
 
-                # add group and value
-                pt.append(gid)
+        # add group and value
+        pt.append(gid)
 
-                if gid >= 5 and in_box(pt, outlier_box):
-                    if in_box(pt, super_box):
-                        pt.append(outlier_gen())
-                    else:
-                        pt.append(mid_gen())
-                else:
-                    pt.append(norm_gen())
+        if gid >= 5 and in_box(pt, outlier_box):
+          if in_box(pt, super_box):
+              pt.append(outlier_gen())
+          else:
+              pt.append(mid_gen())
+        else:
+          pt.append(norm_gen())
 
-                yield pt
+        yield pt
 
-    return outlier_box, super_box, schema, generate()
+  return outlier_box, super_box, schema, generate()
 
 
 def make_gen(u, s):

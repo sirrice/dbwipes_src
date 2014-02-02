@@ -9,15 +9,10 @@ sys.path.extend(['.', '..'])
 from collections import deque
 from itertools import chain
 
-from rtree.index import Index as RTree
-from rtree.index import Property as RProp
-from learners.cn2sd.rule import fill_in_rules
+from learners.cn2sd.rule import *
 from learners.cn2sd.refiner import *
-from score import QuadScoreSample7
 from bottomup.bounding_box import *
 from bottomup.cluster import *
-from util import *
-
 from util import *
 from basic import Basic
 from sampler import Sampler
@@ -51,12 +46,14 @@ class BDTTablesPartitioner(Basic):
         self.start_time = None
 
         self.sampler = Sampler(self.SCORE_ID)
+        self.seen = set()
 
 
         if self.err_funcs is None:
           raise RuntimeError("errfuncs is none")
 
 
+    @instrument
     def setup_tables(self, tables, merged):
         self.merged_table = merged
         self.tables = tables
@@ -73,20 +70,25 @@ class BDTTablesPartitioner(Basic):
 
     def __call__(self, tables, full_table, root=None, **kwargs):
       self.setup_tables(tables, full_table)
+      self.seen = set()
       if not root:
         root = Node(SDRule(full_table, None))
       self.root = root
 
+      samples = [self.sample(t, sr) for t, sr in zip(self.tables, self.samp_rates)]
       f = lambda (idx, samps): self.compute_infs(idx, samps)
-      all_infs = map(f, enumerate(self.tables))
+      #all_infs = map(f, enumerate(self.tables))
+      all_infs = map(f, enumerate(samples))
 
       for leaf in root.leaves:
         parent = leaf.parent
         leaf.parent = None
-        self.grow(leaf, self.tables, self.samp_rates, all_infs)
+        #self.grow(leaf, self.tables, self.samp_rates, all_infs)
+        self.grow(leaf, samples, self.samp_rates, all_infs)
         leaf.parent = parent
       return self.root.nodes
 
+    @instrument
     def sample(self, data, samp_rate):
         return self.sampler(data, samp_rate)
 
@@ -153,6 +155,7 @@ class BDTTablesPartitioner(Basic):
             self.inf_bounds[idx][1] = max(influence, self.inf_bounds[idx][1])
        return row[self.SCORE_ID].value
 
+    @instrument
     def compute_threshold(self, infmax, idx):
         infl, infu = tuple(self.inf_bounds[idx])
         tau, p = self.tau, self.p
@@ -175,6 +178,7 @@ class BDTTablesPartitioner(Basic):
       return np.mean(map(np.mean, filter(bool, sample_infs)))
 
 
+    @instrument
     def databyrule2infs(self, rules, datas):
       """
       compute list of influence values for each combination of rule x data
@@ -195,6 +199,7 @@ class BDTTablesPartitioner(Basic):
       return data2infs, rule2infs, rule2datas
 
 
+    @instrument
     def get_scores(self, rules, samples):
       sample2infs, rule2infs, _ = self.databyrule2infs(rules, samples)
       scores = []
@@ -211,6 +216,7 @@ class BDTTablesPartitioner(Basic):
       scores = filter(lambda s: s!=-inf, scores)
       return scores
 
+    @instrument
     def get_score_for_infs(self, idxs, samp_infs):
         scores, counts = [], []
         for idx, infs in zip(idxs, samp_infs):
@@ -269,6 +275,7 @@ class BDTTablesPartitioner(Basic):
       return score
 
 
+    @instrument
     def skinny_penalty(self, rules):
       for rule in rules:
         edges = []
@@ -295,16 +302,27 @@ class BDTTablesPartitioner(Basic):
           (time.time() - self.start_time) >= self.max_wait
           )
         
+    def grow_next(self):
+      args = self.candidates.next()
+      if args:
+        return self.grow(*args)
+      return None
+
+
     def grow(self, node, tables, samp_rates, sample_infs=None):
         if self.time_exceeded():
           _logger.debug("time exceeded %.2f > %d", (time.time()-self.start_time), self.max_wait)
           return node
 
+        if node.rule in self.seen:
+          _logger.debug("rule seen %d\t%s", hash(node.rule), node.rule)
+          return node
+        self.seen.add(node.rule)
+
         if self.start_time is None and node.depth >= 1:
           self.start_time = time.time()
 
         rule = node.rule
-        data = rule.examples
         datas = tables
         if not sample_infs:
           datas = map(rule.filter_table, tables)
@@ -367,7 +385,8 @@ class BDTTablesPartitioner(Basic):
         ncands = max(1, 2 - node.depth)
         for attr, new_rules, score, scores in attr_scores[:ncands]:
           data2infs, rule2infs, rule2datas = self.databyrule2infs(new_rules, datas)
-          new_srses = self.update_sample_rates(new_rules, data2infs, samp_rates)
+          #new_srses = self.update_sample_rates(new_rules, data2infs, samp_rates)
+          new_srses = [samp_rates] * len(new_rules)
           new_pairs = zip(new_rules, new_srses)
           new_pairs.sort(key=lambda (new_r, new_s): new_r.quality, reverse=True)
 
@@ -375,15 +394,16 @@ class BDTTablesPartitioner(Basic):
             child = Node(new_rule)
             child.prev_attr = attr
             child.parent = node
+            node.add_child(child)
 
-            self.grow(child, rule2datas[new_rule], new_srs, rule2infs[new_rule])
-
-            if child and child.n and child.influence != -inf:
-              node.add_child(child)
+            args = (child, rule2datas[new_rule], new_srs, rule2infs[new_rule])
+            #self.candidates.add((score, new_rule.quality, args))
+            self.grow(*args)
 
         return node
 
 
+    @instrument
     def child_rules(self, rule, attrs=None):
         attrs = attrs or self.cols
         next_rules = defaultdict(list)
@@ -402,6 +422,7 @@ class BDTTablesPartitioner(Basic):
 
 
 
+    @instrument
     def update_sample_rates(self, rules, data2infs, srs):
       """return list where each element are the sample rates for a single rule across the tables"""
       srs_by_table = [[0]*len(srs) for i in data2infs]

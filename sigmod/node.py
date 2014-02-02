@@ -47,6 +47,14 @@ class Node(object):
           return 0
         return 1 + self.parent.depth
     depth = property(__depth__)
+
+    def __path__(self, q=None):
+      q = q or list()
+      if self.parent:
+        self.parent.__path__(q)
+      q.append(self)
+      return q
+    path = property(__path__)
         
 
     def __leaves__(self):

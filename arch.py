@@ -61,9 +61,7 @@ def get_provenance(sharedobj, cols, keys):
     rows = sharedobj.get_tuples(keys, attrs=schema)
     if not len(rows):
         return None
-    table = create_orange_table(rows, schema, [], rm_id_col=False)
-    for row in table:
-        row[ERROR_VAR] = '1'
+    table = create_orange_table(rows, schema)
     return table
 
 
@@ -78,31 +76,32 @@ def get_provenance_split(sharedobj, cols, keys):
     
     rows = sharedobj.get_tuples(keys, attrs=schema)
     if not len(rows): return None
-    rows = remove_bad_rows(rows, schema)
 
- 
-    idxs = np.zeros(len(rows))
-    for rid, row in enumerate(rows):
-      if row[-1] in keys:
-        idxs[rid] = keys.index(row[-1])
-      row.pop()
+    # create a column for the partitioning key so we can efficiently
+    # apply as a mask
+    cols = zip(*rows)
+    keycol = np.array(cols.pop())
     schema.pop()
 
-
-
-    table = create_orange_table(rows, schema, [], rm_id_col=False)
-
-    for row in table:
-        row[ERROR_VAR] = '1'
+    # this domain still allows nulls in discrete attrs
+    domain, funcs = orange_schema_funcs(cols, schema)
+    table = construct_orange_table(domain, schema, funcs, cols)
+    # removed nulls from domain
+    clean_domain = domain_rm_nones(domain)
 
     tables = []
     data = table.to_numpyMA('ac')[0].data
-    for keyidx in xrange(len(keys)):
-        partition = Orange.data.Table(table.domain,data[idxs==keyidx,:])
-        tables.append(partition)
-        
+    # find the rows that contain None values in discrete columns
+    badmask = bad_row_mask(domain, data)
+
+    for idx, key in enumerate(keys):
+      # mask out rows that are not in this partition or have Nulls
+      partition = data[(keycol == key) & badmask,:]
+      partition = Orange.data.Table(clean_domain, partition)
+      tables.append(partition)
     return tables
-    
+
+
 
 
 
@@ -397,31 +396,6 @@ def create_clauses(sharedobj):
       
       sharedobj.clauses[label] = clauses
 
-def score_rule(rule, data):
-    """
-    score = accuracy divided by size of rule
-    """
-    
-    tp, fp, tn, fn = 0.0, 0.0, 0.0, 0.0
-    for row in data:
-        est = rule(row, orange.GetValue)
-        act = row[ERROR_VAR]
-
-        if est == '1':
-            tp += (est == act) and 1
-            fp += (est != act) and 1
-        else:
-            tn += (est == act) and 1
-            fn += (est != act) and 1
-    accuracy = (tp+tn) / len(data)
-    precision = (tp+1) / (tp + fp + 1)
-    recall = (tn + 1) / (tn + fn + 1)
-
-    rule_size = lambda rule: len(rule.to_string().split('\n'))
-    score = accuracy / float( rule_size(rule) )
-    
-    return score
-
 
 
 
@@ -472,6 +446,18 @@ def detect_discrete_cols(rows, attrs):
         dcols.append(attr)
     return dcols
 
+def bad_row_idxs(cols, attrs):
+  bad_attrs = ['moteid']
+  attrs = list(attrs)
+  bad_row_ids = set()
+  for attr, col in zip(attrs, cols):
+    if attr not in bad_attrs: continue
+    if is_discrete(attr, col):
+      bad_row_ids.update(
+          [idx for idx, v in enumerate(col) if v is None or v is 'None']
+      )
+  return bad_row_ids
+
 def remove_bad_rows(rows, attrs):
     bad_attrs = ['moteid']
     attrs = list(attrs)
@@ -487,69 +473,79 @@ def remove_bad_rows(rows, attrs):
     rows = [row for idx, row in enumerate(rows) if idx not in bad_row_ids]
     return rows
 
+def bad_row_mask(domain, arr):
+  """
+  returns a mask that is a 1D boolean array with length arr.shape[0]
+  where the value is
+    1 if row should be preserved
+    0 if row should be removed
+  """
+  bad_attrs = ['moteid']
+  mask = np.zeros(arr.shape[0]).astype(bool)
+  for colidx, attr in enumerate(domain):
+    if not isinstance(attr, Orange.feature.Discrete): continue
+    if attr.name not in bad_attrs: continue
+    col = arr[:, colidx]
+    colmask = (col == None) | (col == 'None')
+    mask |= colmask
+  try:
+    return np.invert(mask)
+  except:
+    pdb.set_trace()
 
 
-def create_orange_table(rows, attrs, errids, rm_id_col=True):
-    errids = set(errids)
-    attrs = list(attrs)
-    eidx = attrs.index('id')
-
-    # orngDisc.orngDisc.entropyDiscretization('')
-    cols = map(list, zip(*rows))
-    features = []
-    for idx, (attr, col) in enumerate(zip(attrs, cols)):
-      bdiscrete = is_discrete(attr, col)
-
-      if bdiscrete:
-        #_logger.debug( "create_table: discrete:\t%s", attr)
-        feature = Orange.feature.Discrete(attr, values=map(str, set(col)))
-      else:
-        #_logger.debug( "create_table: continuous:\t%s", attr)
-        try:
-          for ridx in xrange(len(col)):
-            if col[ridx] is None:
-              col[ridx] = 0.
-            else:
-              col[ridx] = float(col[ridx])
-        except:
-          print "error creating orange table on col", attr
-          print col[ridx]
-          print rows[ridx]
-          print col[idx], filter(lambda x:x,col)[:10]
-          print idx
-          pdb.set_trace()
-          raise
-        feature = Orange.feature.Continuous(attr)
-      features.append(feature)
-
-    # convert discrete columns into str, continuous cols into float
-    for idx in xrange(len(features)):
-      if isinstance(features[idx], Orange.feature.Discrete):
-          cols[idx] = map(str, cols[idx])
-      else:
-          cols[idx] = map(float, cols[idx])
-    
-
-    # add error column
-    errcol = [ row[eidx] in errids and '1' or '0' for row in rows ]
-    errfea = Orange.feature.Discrete(ERROR_VAR, values=['0', '1'])
-    cols.append(errcol)
-
-    # remove ID column before restoring the rows
-    if rm_id_col:
-        features.pop(eidx)
-        cols.pop(eidx)
-
-    rows = map(list, zip(*cols))
-    nerrs = (1.0+len([v for v in errcol if v == '1']))/(1.0+len(errcol))
-    #_logger.debug( "create_orange_table stats %d rows" , len(errcol) )
-    
-    domain = Orange.data.Domain(features, errfea)
-    data = Orange.data.Table(domain)
-    data.extend(rows)
-    return data
 
 
+def orange_schema_funcs(cols, attrs):
+  """
+  @return (Domain, [funcs]) funcs is list of functions to apply to 
+          the corresponding column value
+  """
+  # orngDisc.orngDisc.entropyDiscretization('')
+  features = []
+  funcs = []
+  for idx, (attr, col) in enumerate(zip(attrs, cols)):
+    bdiscrete = is_discrete(attr, col)
+
+    if bdiscrete:
+      feature = Orange.feature.Discrete(attr, values=map(str, set(col)))
+      func = str
+    else:
+      feature = Orange.feature.Continuous(attr)
+      func = lambda v: v is not None and float(v) or 0.
+
+    features.append(feature)
+    funcs.append(func)
+
+  domain = Orange.data.Domain(features)
+  return domain, funcs
+
+def domain_rm_nones(domain):
+  features = []
+  for attr in domain:
+    if isinstance(attr, Orange.feature.Discrete):
+      vals = attr.values
+      vals = filter(lambda v: v not in [None, 'None'], vals)
+      attr = Orange.feature.Discrete(attr.name, values=vals)
+    features.append(attr)
+  return Orange.data.Domain(features)
+
+
+def construct_orange_table(domain, attrs, funcs, cols):
+  for idx in xrange(len(cols)):
+    cols[idx] = map(funcs[idx], cols[idx])
+
+  rows = map(list, zip(*cols))
+  table = Orange.data.Table(domain)
+  table.extend(rows)
+  return table
+
+
+def create_orange_table(rows, attrs):
+  cols = zip(*rows)
+  domain, funcs = orange_schema_funcs(cols, attrs)
+  attrs = list(attrs)
+  return construct_orange_table(domain, attrs, funcs, cols)
 
 
 def merge_tables(tables):

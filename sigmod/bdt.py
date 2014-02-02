@@ -116,14 +116,13 @@ class BDT(Basic):
         
 
         return self.l * np.mean(bad_infs) - (1. - self.l) * max(map(abs, good_infs))
-        
 
+
+    @instrument
     def merge(self, clusters):
         if len(clusters) <= 1:
             return clusters
         start = time.time()
-        for c in clusters:
-          c.error = self.influence_cluster(c)
         clusters.sort(key=lambda c: c.error, reverse=True)
         thresh = compute_clusters_threshold(clusters, nstds=1.5)
         is_mergable = lambda c: c.error >= thresh
@@ -143,16 +142,10 @@ class BDT(Basic):
         })
         self.merger = Merger(**params)
         merged_clusters = self.merger(clusters)
-        merged_clusters.sort(key=lambda c: c.error, reverse=True)
         self.merge_cost = time.time() - start
-        _logger.debug("----merge costs----")
-        _logger.debug( "merge cost\t%d" , self.merge_cost)
-        stats = sorted(self.merger.stats.items(), key=lambda s: s[1], reverse=True)
-        strs = ['%s\t%.4f\t%d\t%.4f' % (k, v[0], v[1], v[1] and v[0]/v[1] or 0) for k,v in stats]
-        _logger.debug('\n%s', '\n'.join(strs))
 
-        for func, cost in self.merger.stats.items():
-            self.costs['merge_%s'%func] = cost
+        merged_clusters.sort(key=lambda c: c.error, reverse=True)
+        self.merge_stats(self.merger.stats, 'merge_')
         return merged_clusters
 
     def create_rtree(self, clusters):
@@ -174,6 +167,7 @@ class BDT(Basic):
         return rtree
 
     
+    @instrument
     def intersect(self, bclusters, hclusters):
         errors = [c.error for c in bclusters]
         u, std = np.mean(errors), np.std(errors)
@@ -290,6 +284,7 @@ class BDT(Basic):
 
 
 
+    @instrument
     def get_partitions(self, full_table, bad_tables, good_tables, **kwargs):
         clusters, nonleaf_clusters = self.load_from_cache()
         if clusters:
@@ -345,9 +340,7 @@ class BDT(Basic):
 
 
         start = time.time()
-        _logger.debug('intersecting')
         clusters = self.intersect(bclusters, hclusters)
-        _logger.debug("done intersecting")
         nonleaves = []
         nonleaves.extend(bpartitioner.root.nonleaves)
         #nonleaves.extend(hpartitioner.root.nonleaves)
@@ -356,11 +349,13 @@ class BDT(Basic):
             full_table
         )
         nonleaf_clusters = filter_bad_clusters(nonleaf_clusters)
-        _logger.debug('done in %d', time.time()-start)
         self.cost_split = time.time() - start
 
         clusters = filter_bad_clusters(clusters)
         self.cache_results(clusters, nonleaf_clusters)
+
+        self.merge_stats(bpartitioner.stats)
+        self.merge_stats(hpartitioner.stats)
 
         return clusters, nonleaf_clusters
 
@@ -377,11 +372,13 @@ class BDT(Basic):
         self.all_clusters = clusters
 
         start = time.time()
+        for c in chain(clusters, nomerge_clusters):
+          c.error = self.influence_cluster(c)
+        self.stats['init_cluster_errors'] = [time.time()-start, 1]
+
+        start = time.time()
         _logger.debug('merging')
         final_clusters = self.merge(clusters)        
-
-        for c in nomerge_clusters:
-          c.error = self.influence_cluster(c)
         final_clusters.extend(nomerge_clusters)
         final_clusters = filter_bad_clusters(final_clusters)
 
@@ -389,10 +386,16 @@ class BDT(Basic):
         self.cost_merge = time.time() - start
 
 
-        self.costs.update( {'cost_partition_bad' : self.cost_partition_bad,
-                'cost_partition_good' : self.cost_partition_good,
-                'cost_split' : self.cost_split,
-                'cost_merge' : self.cost_merge})
+        self.costs.update({
+          'cost_partition_bad' : self.cost_partition_bad,
+          'cost_partition_good' : self.cost_partition_good,
+          'cost_split' : self.cost_split,
+          'cost_merge' : self.cost_merge
+        })
         
+        _logger.debug("=== Costs ===")
+        for key, stat in sorted(self.stats.items()):
+          _logger.debug("%.4f\t%d\t%s", stat[0], stat[1], key)
+
         return self.final_clusters
 

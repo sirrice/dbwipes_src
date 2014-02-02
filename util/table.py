@@ -121,7 +121,7 @@ def reconcile_tables(*all_tables):
             
 
     if not full_table:
-        return [], None
+        return (), None
 
     return tuple(translated_tables), full_table
 

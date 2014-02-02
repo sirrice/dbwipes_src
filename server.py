@@ -261,18 +261,22 @@ def debug():
 
 
 
+            start = time.time()
             parallel_debug(
               obj,
               nprocesses=min(maxkeys, 4),
               parallelize=True,
               nstds=0,
               errperc=0.001,
-              epsilon=0.05,
+              epsilon=0.008,
               msethreshold=0.15,
               c=obj.c,
               complexity_multiplier=4.5,
-              max_wait=20
+              l=0.9,
+              max_wait=8
             )
+            cost = time.time() - start
+            print "end to end took %.4f" % cost
 
 
 
@@ -307,11 +311,13 @@ def create_filter_options(obj):
       tmpq = obj.parsed.clone()
       cwhere = 'not (%s)' % clause 
       tmpq.where.append(cwhere)
-      clause_parts = [c.strip() for c in str(rule).split(' and ')]
+      clause_parts = rule.toCondStrs()
+      print rule
+      print clause_parts
 
-      equiv_clause_parts = map(lambda r: [c.strip() for c in str(r).split(' and ')], rule.cluster_rules)
+      equiv_clause_parts = [r.toCondStrs() for r in rule.cluster_rules]
 
-      filter_opts[label].append( (clause_parts, str(tmpq), cwhere, json.dumps({}), equiv_clause_parts, idx) )
+      filter_opts[label].append( (clause_parts, str(tmpq), cwhere, json.dumps({}), equiv_clause_parts, '%.4f' % rule.quality, idx) )
       idx += 1
   return filter_opts
 

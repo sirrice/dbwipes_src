@@ -75,10 +75,14 @@ def parallel_runner(sharedobj, aggerr, **kwargs):
 
 
 def serial_hybrid(obj, aggerr, **kwargs):
+    costs = {}
     db = connect(obj.dbname)
     obj.db = db
+    start = time.time()
     bad_tables = get_provenance_split(obj, aggerr.agg.cols, aggerr.keys)
     good_tables = get_provenance_split(obj, aggerr.agg.cols, obj.goodkeys[aggerr.agg.shortname]) or []
+    costs['data_load'] = time.time() - start
+
     _logger.debug("bad table counts:  %s" % ', '.join(map(str, map(len, bad_tables))))
     _logger.debug("good table counts: %s" % ', '.join(map(str, map(len, good_tables))))
     print "agg error %s \t %s" % (aggerr.agg, aggerr.errtype)
@@ -87,6 +91,8 @@ def serial_hybrid(obj, aggerr, **kwargs):
     cost, ncalls = 0, 0
     rules = []
     try:
+        full_start = time.time()
+        start = time.time()
         cols = valid_table_cols(bad_tables[0], aggerr.agg.cols, kwargs)
         all_cols = cols + aggerr.agg.cols        
         torm = [attr.name for attr in bad_tables[0].domain if attr.name not in all_cols]
@@ -96,6 +102,7 @@ def serial_hybrid(obj, aggerr, **kwargs):
         good_tables = [rm_attr_from_domain(t, torm) for t in good_tables]
         (bad_tables, good_tables), all_full_table = reconcile_tables(bad_tables, good_tables)
         _, full_table = reconcile_tables(bad_tables)
+        costs['data_setup'] = time.time() - start
 
 
         # make sure aggerr keys and tables are consistent one last time
@@ -111,13 +118,12 @@ def serial_hybrid(obj, aggerr, **kwargs):
           'msethreshold': 0.01,
           'max_wait':5
         }
-            # errperc=0.001,
-            # 
-            # msethreshold=0.01,
-            # k=10,
-            # nprocesses=4,
-            # parallelize=True,
-            # complexity_multiplier=1.5}
+        # msethreshold=0.01,
+        # k=10,
+        # nprocesses=4,
+        # parallelize=True,
+        # complexity_multiplier=1.5}
+
         params.update(dict(kwargs))
 
         if aggerr.agg.func.__class__ in (errfunc.SumErrFunc, errfunc.CountErrFunc):
@@ -148,45 +154,49 @@ def serial_hybrid(obj, aggerr, **kwargs):
         hybrid = klass(**params)
         clusters = hybrid(all_full_table, bad_tables, good_tables)
         print "nclusters: %d" % len(clusters)
+        costs['rules_get'] = time.time() - start
+
+        start = time.time()
+        clusters = normalize_cluster_errors(filter_bad_clusters(clusters))
         rules = clusters_to_rules(clusters, cols, full_table)
-        for r in rules: Basic.influence(hybrid, r)
+        #for r in rules: Basic.influence(hybrid, r)
+        rules = [r for r in rules if str(r).strip() and valid_number(r.quality)]
         rules.sort(key=lambda r: r.quality, reverse=True)
         rules = rules[:150]
-        rules = [r for r in rules if str(r).strip() != '' and valid_number(r.quality)]
-        rules.sort(key=lambda r: r.quality, reverse=True)
+        rules = list(set(rules))
+        costs['rules_prune'] = time.time() - start
 
-        dups = set()
-        newrules = []
-        for r in rules:
-            if str(r) in dups:
-                continue
-            dups.add(str(r))
-            newrules.append(r)
-        rules = newrules
 
         _logger.debug("clustering %d rules" % len(rules))
         for r in rules[:5]:
           _logger.debug("%.4f\t%s" % (r.quality, str(r)))
 
 
-
-        clustered_rules = hybrid.group_rules(rules, 15)
+        clustered_rules = hybrid.group_rules(rules, 8)
         rules = clustered_rules
+        costs['rules_cluster'] = time.time() - start
 
-        cost = time.time() - start
         ncalls = 0
     except:
         traceback.print_exc()
 
     
     # return the best rules first in the list
+    start = time.time()
     rules.sort(key=lambda r: r.quality, reverse=True)
     rules = [r.simplify(all_full_table) for r in rules[:10]]
+    costs['rules_simplify'] = time.time() - start
+
+    cost = time.time() - full_start
 
 
     print "found rules"
     for rule in rules[:5]:
       print "%.5f\t%s" % (rule.quality, rule)
+
+    print "=== Costs ==="
+    for key, cost in costs.iteritems():
+      print "%.5f\t%s" % (cost, key)
     
     return cost, ncalls, table, rules
 

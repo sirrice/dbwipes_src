@@ -40,9 +40,10 @@ var clickedInfo = null;
 {% for label, clauses in filter_opts %}
 	{% if clauses|length > 0 %}
     <!--<h2>{{label}}</h2>-->
-		{% for clause_parts, cquery, cwhere, cdata, equiv_clause_parts, idx in clauses %}
+		{% for clause_parts, cquery, cwhere, cdata, equiv_clause_parts, score, idx in clauses %}
       <ul class="filter-clause" id="clause_{{idx}}">
         <span class="load-text">loading</span>
+        <span class="score">{{score}}</span>
         {% for clause in clause_parts %}
             <li class='clause-part'>{{clause}}</li>
         {% endfor %}
