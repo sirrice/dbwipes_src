@@ -15,6 +15,7 @@ from bottomup.bounding_box import *
 from bottomup.cluster import *
 from util import *
 from basic import Basic
+from rangemerger import RangeMerger
 from merger import Merger
 from grouper import Grouper, Blah
 
@@ -172,11 +173,11 @@ class MR(Basic):
         for bests in self.opts_per_iter:
             bests.sort(reverse=True)
             ret.extend(bests)# self.merge_rules(bests))
-        ret = map(self.blah_to_cluster, ret)
-        #ret = self.merge_rules(ret)
-        #ret.sort(reverse=True)
-        self.final_clusters = ret
-        return ret
+        clusters = map(self.blah_to_cluster, ret)
+        clusters = self.merge_rules(clusters)
+        clusters.sort(reverse=True)
+        self.all_clusters = self.final_clusters = clusters
+        return clusters
 
         self.best.sort(reverse=True)
         return self.merge_rules(self.best)
@@ -185,16 +186,13 @@ class MR(Basic):
         rule = blah.rule
         fill_in_rules([rule], self.full_table, self.cols)
         c = Cluster.from_rule(rule, self.cols)
+        c.error = self.influence(c)
         return c
 
 
-    def merge_rules(self, blahs):
-        clusters = map(self.blah_to_cluster, blahs)
-
+    def merge_rules(self, clusters):
         start = time.time()
 
-        for c in clusters:
-            c.error = self.influence(c) 
         clusters = filter_bad_clusters(clusters)
         thresh = compute_clusters_threshold(clusters, nstds=0.)
         is_mergable = lambda c: c.error >= thresh
@@ -203,11 +201,13 @@ class MR(Basic):
         params.update({'cols' : self.cols,
                        'influence' : lambda cluster: self.influence(cluster),
                        'is_mergable' : is_mergable,
+                       'c_range': self.c_range,
                        'use_mtuples' : False,
                        'learner' : self,
                        'partitions_complete' : False
                        })
-        self.merger = Merger(**params)
+        self.merger = RangeMerger(**params)
+        #self.merger = Merger(**params)
         self.final_clusters = self.merger(clusters)
         self.all_clusters = clusters
         self.cost_merge = time.time() - start
@@ -224,7 +224,10 @@ class MR(Basic):
 
     def influence(self, cluster):
         rule = cluster.to_rule(self.full_table, self.cols, cont_dists=self.cont_dists, disc_dists=self.disc_dists)
-        return Basic.influence(self, rule)
+        Basic.influence(self, rule)
+        cluster.error = rule.quality
+        cluster.inf_state = rule.inf_state
+        return cluster.error
 
 
 

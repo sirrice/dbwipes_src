@@ -126,10 +126,10 @@ def intel_query():
         where = request.form.get('filter', '') 
 
         if not sql:
-            sql = """ SELECT avg(temp), stddev(temp), date_trunc('hour',date+time) as dt
+            sql = """ SELECT avg(temp), stddev(temp), hour
             FROM readings
-            WHERE date > '2004-3-1' and date < '2004-3-15'
-            GROUP BY dt; """
+            GROUP BY hour; """
+            #WHERE date > '2004-3-1' and date < '2004-3-15'
 
         obj = get_query_sharedobj(sql, delids)
         if where.strip():
@@ -273,7 +273,7 @@ def debug():
               c=obj.c,
               complexity_multiplier=4.5,
               l=0.9,
-              max_wait=8
+              max_wait=21,
             )
             cost = time.time() - start
             print "end to end took %.4f" % cost
@@ -317,7 +317,7 @@ def create_filter_options(obj):
 
       equiv_clause_parts = [r.toCondStrs() for r in rule.cluster_rules]
 
-      filter_opts[label].append( (clause_parts, str(tmpq), cwhere, json.dumps({}), equiv_clause_parts, '%.4f' % rule.quality, idx) )
+      filter_opts[label].append( (clause_parts, str(tmpq), cwhere, json.dumps({}), equiv_clause_parts, '%.4f' % rule.quality, [round(rule.c_range[0], 3), round(rule.c_range[1], 3)], idx) )
       idx += 1
   return filter_opts
 

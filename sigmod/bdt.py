@@ -23,6 +23,7 @@ from util import *
 from basic import Basic
 from sampler import Sampler
 from merger import Merger
+from rangemerger import RangeMerger, get_frontier
 from settings import *
 from bdtpartitioner import *
 
@@ -98,21 +99,48 @@ class BDT(Basic):
             clusters.append(cluster)
         return clusters
 
+    def nodes_to_popular_clusters(self, nodes, table):
+      if not nodes: return []
+      from collections import Counter
+      counter = Counter()
+      str_to_rule = {}
+
+      for node in nodes:
+        r = node.rule
+        if len(r.filter.conditions) > 1:
+          for cond in r.filter.conditions:
+            newr = SDRule(r.data, r.targetClass, [cond], r.g)
+            newr.quality = node.influence
+            counter[newr] += 1
+            str_to_rule[newr] = newr
+
+      thresh = np.percentile(counter.values(), 70)
+      rules = []
+      for strrule, count in counter.iteritems():
+        if count >= thresh:  #0.25 * len(nodes):
+          r = str_to_rule[strrule]
+          rules.append(r)
+
+      fill_in_rules(rules, table, cols=self.cols)
+      clusters = [Cluster.from_rule(r, self.cols) for r in rules]
+      return clusters
+
+
     def estimate_influence(self, cluster):
         bad_infs, good_infs = [], []
 
         for ef, big_state, state, n in zip(self.bad_states, cluster.bad_states, cluster.bad_cards):
             if not state:
                 continue
-            inf = ef.recover(ef.remove(big_state, state, n))
-            bad_infs.append(inf)
+            influence = ef.recover(ef.remove(big_state, state, n))
+            bad_infs.append(influence)
         if not bad_infs:
             return -inf
         
         if cluster.good_states:
             for ef, big_state, state, n in zip(self.good_states, cluster.good_states, cluster.good_cards):
-                inf = ef.recover(ef.remove(big_state, state))
-                good_infs.append(inf)
+                influence = ef.recover(ef.remove(big_state, state))
+                good_infs.append(influence)
         
 
         return self.l * np.mean(bad_infs) - (1. - self.l) * max(map(abs, good_infs))
@@ -135,12 +163,13 @@ class BDT(Basic):
         params.update({
           'cols' : self.cols,
           'influence' : lambda c: self.influence_cluster(c),
-          'influence_components': lambda c: self.influence_cluster_components(c),
           'is_mergable' : is_mergable,
           'use_mtuples' : use_mtuples,
+          'c_range': self.c_range,
           'learner' : self
         })
-        self.merger = Merger(**params)
+        self.merger = RangeMerger(**params)
+        #self.merger = Merger(**params)
         merged_clusters = self.merger(clusters)
         self.merge_cost = time.time() - start
 
@@ -256,9 +285,11 @@ class BDT(Basic):
         try:
             myhash = str(hash(self))
             if myhash in self.cache and self.use_cache:
-                dicts, nonleaf_dicts = json.loads(self.cache[myhash])
+                dicts, nonleaf_dicts, errors = json.loads(self.cache[myhash])
                 clusters = map(Cluster.from_dict, dicts)
                 nonleaf_clusters = map(Cluster.from_dict, nonleaf_dicts)
+                for err, c in zip(errors, chain(clusters, nonleaf_clusters)):
+                  c.error = err
                 return clusters, nonleaf_clusters
         except:
             pass
@@ -276,7 +307,8 @@ class BDT(Basic):
             try:
                 dicts = [c.to_dict() for c in clusters]
                 nonleaf_dicts = [c.to_dict() for c in nonleaf_clusters]
-                self.cache[myhash] = json.dumps((dicts, nonleaf_dicts))
+                errors = [c.error for c in chain(clusters, nonleaf_clusters)]
+                self.cache[myhash] = json.dumps((dicts, nonleaf_dicts, errors))
             except:
                 pass
             finally:
@@ -343,7 +375,7 @@ class BDT(Basic):
         clusters = self.intersect(bclusters, hclusters)
         nonleaves = []
         nonleaves.extend(bpartitioner.root.nonleaves)
-        #nonleaves.extend(hpartitioner.root.nonleaves)
+        popular_clusters = self.nodes_to_popular_clusters(nonleaves, full_table)
         nonleaf_clusters = self.nodes_to_clusters(
             nonleaves,
             full_table
@@ -352,10 +384,19 @@ class BDT(Basic):
         self.cost_split = time.time() - start
 
         clusters = filter_bad_clusters(clusters)
+        clusters.extend(popular_clusters)
+
+        start = time.time()
+        for c in chain(clusters, nonleaf_clusters):
+          c.error = self.influence_cluster(c)
+        self.stats['init_cluster_errors'] = [time.time()-start, 1]
+
+
         self.cache_results(clusters, nonleaf_clusters)
 
         self.merge_stats(bpartitioner.stats)
         self.merge_stats(hpartitioner.stats)
+
 
         return clusters, nonleaf_clusters
 
@@ -371,16 +412,19 @@ class BDT(Basic):
         clusters, nomerge_clusters = self.get_partitions(full_table, bad_tables, good_tables, **kwargs)
         self.all_clusters = clusters
 
-        start = time.time()
-        for c in chain(clusters, nomerge_clusters):
-          c.error = self.influence_cluster(c)
-        self.stats['init_cluster_errors'] = [time.time()-start, 1]
+        for c in nomerge_clusters:
+          c.inf_func = c.create_inf_func(self.l)
+          c.c_range = list(self.c_range)
+
 
         start = time.time()
         _logger.debug('merging')
         final_clusters = self.merge(clusters)        
         final_clusters.extend(nomerge_clusters)
         final_clusters = filter_bad_clusters(final_clusters)
+
+        # if running range mergen
+        final_clusters, rms = get_frontier(final_clusters)
 
         self.final_clusters = final_clusters
         self.cost_merge = time.time() - start

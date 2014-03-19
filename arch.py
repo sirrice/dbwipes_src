@@ -74,12 +74,16 @@ def get_provenance_split(sharedobj, cols, keys):
     #_logger.debug( "get_provenance schema\t%s", schema)
 
     
+    start = time.time()
     rows = sharedobj.get_tuples(keys, attrs=schema)
+    print "dbquery cost %.4f" % (time.time() - start)
     if not len(rows): return None
 
     # create a column for the partitioning key so we can efficiently
     # apply as a mask
-    cols = zip(*rows)
+    cols = map(np.array, zip(*rows))
+    badmask = bad_row_mask(schema, cols[:-1])
+    cols = [col[badmask] for col in cols]
     keycol = np.array(cols.pop())
     schema.pop()
 
@@ -92,13 +96,21 @@ def get_provenance_split(sharedobj, cols, keys):
     tables = []
     data = table.to_numpyMA('ac')[0].data
     # find the rows that contain None values in discrete columns
-    badmask = bad_row_mask(domain, data)
 
     for idx, key in enumerate(keys):
       # mask out rows that are not in this partition or have Nulls
-      partition = data[(keycol == key) & badmask,:]
-      partition = Orange.data.Table(clean_domain, partition)
+      partition_data = data[(keycol == key),:]# & badmask,:]
+      partition = Orange.data.Table(clean_domain, partition_data)
+
+      #badrows = [row for row in partition if '#RNGE' in map(str, row)]
+      #if badrows:
+      #  import pdb
+      #  pdb.set_trace()
+
+
       tables.append(partition)
+
+
     return tables
 
 
@@ -405,7 +417,7 @@ def is_discrete(attr, col):
         'est', 'height', 'width', 'atime', 'v', 'light', 'humidity',
         'age']:
         return False
-    if attr in ['recipient_zip', 'moteid', 'file_num']:
+    if attr in ['recipient_zip', 'sensor', 'moteid' 'file_num']:
         return True
 
     # continuous or discrete?
@@ -446,53 +458,24 @@ def detect_discrete_cols(rows, attrs):
         dcols.append(attr)
     return dcols
 
-def bad_row_idxs(cols, attrs):
-  bad_attrs = ['moteid']
-  attrs = list(attrs)
-  bad_row_ids = set()
-  for attr, col in zip(attrs, cols):
-    if attr not in bad_attrs: continue
-    if is_discrete(attr, col):
-      bad_row_ids.update(
-          [idx for idx, v in enumerate(col) if v is None or v is 'None']
-      )
-  return bad_row_ids
-
-def remove_bad_rows(rows, attrs):
-    bad_attrs = ['moteid']
-    attrs = list(attrs)
-    bad_row_ids = set()
-    cols = map(list, zip(*rows))
-    dcols = []
-    for idx, (attr, col) in enumerate(zip(attrs, cols)):
-      if attr not in bad_attrs: continue
-      if is_discrete(attr, col):
-        for rowidx, v in enumerate(col):
-          if v is None or v is 'None':
-            bad_row_ids.add(rowidx)
-    rows = [row for idx, row in enumerate(rows) if idx not in bad_row_ids]
-    return rows
-
-def bad_row_mask(domain, arr):
+def bad_row_mask(schema, cols):
   """
   returns a mask that is a 1D boolean array with length arr.shape[0]
   where the value is
     1 if row should be preserved
     0 if row should be removed
   """
-  bad_attrs = ['moteid']
-  mask = np.zeros(arr.shape[0]).astype(bool)
-  for colidx, attr in enumerate(domain):
-    if not isinstance(attr, Orange.feature.Discrete): continue
-    if attr.name not in bad_attrs: continue
-    col = arr[:, colidx]
-    colmask = (col == None) | (col == 'None')
+  bad_attrs = ['moteid', 'sensor']
+  mask = np.zeros(len(cols[0])).astype(bool)
+  for attr, col in zip(schema, cols):
+    if attr not in bad_attrs: continue
+    colmask = np.equal(col, None) | (col == 'None')
     mask |= colmask
+
   try:
     return np.invert(mask)
   except:
     pdb.set_trace()
-
 
 
 

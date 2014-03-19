@@ -53,6 +53,9 @@ def print_all_clusters(pp, db, tablename, learner, c):
     best_clusters[0].error = 1
     tuples = get_tuples_in_bounds(db, tablename, [], 'g = 7')
 
+    for cl in clusters:
+      print str(cl), cl.c_range
+
     for dim in xrange(len(tuples[0])-4):
       suffix = "%.4f dim %d" % (c, dim)
       fig = plt.figure(figsize=(12, 4))
@@ -179,8 +182,10 @@ if __name__ == '__main__':
   #reset_cache()
   #cachecost_dicts = run_cache(dim, uo, cs, l=0.95, tree_alg='rt', klass=NDT, use_cache=cache, tau= [0.1, 0.5])
 
-  cachecost_dicts = run_cache(dim, uo, cs, l=0.95, tree_alg='rt', klass=BDT, use_cache=cache, tau= [0.1, 0.5],
-      dataset='data2clust_2_2_2k_vol15_uo80')
+  cachecost_dicts = run_cache(dim, uo, cs, l=0.85, tree_alg='rt', klass=BDT, 
+      epsilon=0.001, use_cache=cache, tau= [0.02, 0.5],
+      c_range=[0.01, 0.7],
+      dataset='data2clust_2_2_2k_vol20_uo80')
 
 
 

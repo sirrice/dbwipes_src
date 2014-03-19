@@ -25,7 +25,9 @@ class DatasetNames(object):
                 'fec12_donation2',
                 'harddata4_sum',
                 'data_2_2_1000_0d25',
-                'data_2_2_1000_0d1']
+                'data_2_2_1000_0d1',
+                'lqm' # 19
+                ]
 
     def __getitem__(self, key):
         try:
@@ -58,6 +60,8 @@ def get_test_data(name, **kwargs):
         dbname = 'harddata'
     elif 'fec12' in name:
         dbname = 'fec12'
+    elif 'lqm' in name:
+        dbname = 'med'
     elif 'fec' in name:
         dbname = 'fec'
     elif name.startswith('data_') or name.startswith('data2c'):
@@ -310,12 +314,33 @@ def get_fec12_donation2():
         return [row['id'].value for row in table if row['contb_receipt_amt'].value > 1500]
     return sql, badresults[:2], goodresults[:2], get_ground_truth, ErrTypes.TOOHIGH,  'donations'
 
+def get_fec12_donation2():
+    sql = """SELECT sum(contb_receipt_amt) as None, contb_receipt_dt as contb_receipt_dt FROM donations WHERE (cand_nm) = 'Obama, Barack' GROUP BY contb_receipt_dt"""
+    badresults = ["2012-03-31T04:00:00.000Z","2012-06-28T04:00:00.000Z","2012-06-30T04:00:00.000Z","2012-06-29T04:00:00.000Z","2012-04-30T04:00:00.000Z","2012-06-26T04:00:00.000Z","2012-05-31T04:00:00.000Z"]
+    goodresults = ["2011-10-23T04:00:00.000Z","2011-10-22T04:00:00.000Z","2011-10-26T04:00:00.000Z","2011-10-25T04:00:00.000Z","2011-10-24T04:00:00.000Z"]
+
+    def get_ground_truth(table):
+        return [row['id'].value for row in table if row['contb_receipt_amt'].value > 1500]
+    return sql, badresults[:2], goodresults[:2], get_ground_truth, ErrTypes.TOOHIGH,  'donations'
+
+def get_lqm():
+    sql = """SELECT sum(total_cost), ccm_payor FROM lqm group by ccm_payor"""
+    badresults = ['MCARE']
+    goodresults = ["BCOAH" ,"TCALL" ,"HOSPI",
+        "HPMHC" ,"TCLPR" ,"MOTRV" ,"AUCHK" , 
+        "MULTI" ,"MDMHC" ,"OTMHC" ,"NHMHC"]
+
+    def get_ground_truth(table):
+      return [row['id'].value for row in table if row['attending_physician'] in [18243 , 14122 , 33831 , 11587]]
+    return sql, badresults, goodresults, get_ground_truth, ErrTypes.TOOHIGH, 'lqm'
+ 
+
 
 def get_sigmod_data(fname):
     """
     fname: data_<ndim>_<kdim>_<npts/group>_<volume>[_uh_sh_uo_so]
     """
-    sql = """SELECT sum(v), g FROM %s GROUP BY g""" % fname
+    sql = """SELECT avg(v), g FROM %s GROUP BY g""" % fname
     badresults = range(5,10)
     goodresults = range(5)
 

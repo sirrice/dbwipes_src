@@ -7,14 +7,14 @@ import cStringIO
 from collections import defaultdict
 
 
-infinity = 1e10000
+inf = infinity = 1e10000
 
 #class SDRule (orange.Rule):
 class SDRule(object) :
     __id__ = 0
 
     
-    def __init__(self, data, targetClass, conditions=[] ,g =1, negate=False):
+    def __init__(self, data, targetClass, conditions=[] ,g =1, negate=False, c_range = None):
         self.g = g
         self.data = data
         self.targetClass = targetClass
@@ -28,11 +28,14 @@ class SDRule(object) :
         self.fixed = False # fixed rules cannot be extended
 
         self.weight = 1.
-        self.quality = None
+        self.quality = -inf
         self.score = 0.
         self.score_norm = None
         self.inf_state = None
         self.isbest = False
+
+        self.c_range = c_range
+        if not self.c_range: self.c_range = [infinity, -infinity]
 
         self.stats_mean = None
         self.stats_std = None
@@ -191,6 +194,16 @@ class SDRule(object) :
 
         return SDRule(self.data, self.targetClass, conds, self.g)
 
+    def cloneAndAppendCondition(self, cond):
+      attr = self.data.domain[cond.position]
+      if type(cond) == Orange.data.filter.ValueFilterContinuous:
+        return self.cloneAndAddContCondition(attr, cond.min, cond.max)
+      else:
+        values = cond.values
+        vals = [attr.values[int(v)] for v in values]
+        return self.cloneAndAddCondition(attr, vals)
+
+
 
     def cloneAndAddCondition(self, attribute, values, used=False, negate=False):
         '''Returns a copy of this rule which condition part is extended by attribute = value'''
@@ -246,6 +259,7 @@ class SDRule(object) :
             return ret
         ret = SDRule(data, self.targetClass, self.filter.conditions[:], self.g, negate=self.filter.negate)
         ret.cluster_rules = list(self.cluster_rules)
+        ret.c_range = list(self.c_range)
         return ret
 
     def cloneWithNewData(self, newdata):
@@ -416,6 +430,7 @@ class SDRule(object) :
         ret = self.clone()
         ret.quality = self.quality
         ret.filter.conditions = conds
+        ret.c_range = list(self.c_range)
         return ret
 
 
@@ -462,7 +477,7 @@ class SDRule(object) :
         rule = ' and '.join(ret)
         if self.filter.negate:
             rule = '%s (Neg)' % rule
-        return '%.4f  %s' % (self.quality, rule)
+        return '%.4f  %s' % ((self.quality or -inf), rule)
 
     def toCondStrs(self):
         domain = self.data.domain
@@ -476,6 +491,7 @@ class SDRule(object) :
                 ret.append(s)
 
         return ret
+    cond_strs = property(toCondStrs)
 
 
     

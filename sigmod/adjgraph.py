@@ -67,7 +67,7 @@ class AdjacencyGraph(object):
                     self.graph = graph
                 def insert(self, *args, **kwargs):
                     pass
-                def remove(self, *args, **kwargs):
+                def delete(self, *args, **kwargs):
                     pass
                 def intersection(self, *args, **kwargs):
                     return xrange(len(self.graph.clusters))

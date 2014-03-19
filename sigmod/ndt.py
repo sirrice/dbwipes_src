@@ -260,9 +260,9 @@ class NDT(Basic):
         infs = []
         for table, err_func in zip(tables, err_funcs):
           for row in table:
-            inf = err_func([row])
-            row[self.SCORE_ID] = inf
-            infs.append(inf)
+            influence = err_func([row])
+            row[self.SCORE_ID] = inluencef
+            infs.append(influence)
         return infs
 
     def influence_cutoff(self, tables, percentile=80):

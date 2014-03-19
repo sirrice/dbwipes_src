@@ -15,6 +15,7 @@ from util.prob import *
 from util.misc import valid_number
 from bounding_box import *
 from learners.cn2sd.rule import SDRule
+from errfunc import compute_bad_inf
 
 nan = float('nan')
 inf = float('inf')
@@ -54,7 +55,19 @@ class Cluster(object):
         self.mean_bc = None  # provably correct
         self.mean_gd = None
         self.mean_gc = None
+
+        # data structures for merger
+        # for dominance in merger
         self.inf_range = None
+
+        # lambda c: -> influence value
+        self.inf_func = None
+
+        # range of c values this cluster is potentially
+        # optimal over
+        self.c_range = None
+        if self.c_range is None: 
+          self.c_range = [-inf, inf]
 
         self.states = []
         self.cards = []
@@ -70,6 +83,21 @@ class Cluster(object):
 
         self.hash = None
         self._bound_hash = None
+
+    def create_inf_func(self, l):
+      if self.inf_state is None:
+        raise Exception("inf_state is None, cant' create inf_func")
+
+      inf_state = self.inf_state
+      vs = [gv for gv, gc in zip(inf_state[2], inf_state[3]) if gc]
+      if vs:
+        maxg = max(vs)
+      else:
+        maxg = 0
+      topbots = [pair for pair in zip(*inf_state[:2]) if valid_number(pair[0]) and valid_number(pair[1])]
+      f = lambda c: l*np.mean([compute_bad_inf(top, bot, c) for top, bot in topbots if bot]) - (1.-l)*maxg
+      return f
+
 
     @staticmethod
     def from_dict(thedict):
@@ -101,8 +129,13 @@ class Cluster(object):
     volume = property(__volume__)
 
     def clone(self):
-        return Cluster(self.bbox, self.error, self.cols,
-                       parents=self.parents, discretes=self.discretes, **self.kwargs)
+        c = Cluster(self.bbox, self.error, self.cols,
+                       parents=self.parents, discretes=self.discretes, 
+                       **self.kwargs)
+        c.inf_func = self.inf_func
+        c.inf_state = self.inf_state
+        c.c_range = list(self.c_range)
+        return c
 
     def max_ancestor_error(self):
         if not self.parents:
@@ -268,13 +301,29 @@ class Cluster(object):
         return self.discretes_contains(o)
 
     def same(self, o, epsilon=0.):
-        for key in o.discretes.keys():
-          if key in self.discretes:
-            diff = set(o.discretes[key]).intersection(self.discretes[key])
-            if len(diff) != len(o.discretes[key]) or len(diff) != len(self.discretes[key]):
-              return False
+      for key in o.discretes.keys():
+        if key in self.discretes:
+          diff = set(o.discretes[key]).intersection(self.discretes[key])
+          if len(diff) != len(o.discretes[key]) or len(diff) != len(self.discretes[key]):
+            return False
 
-        return box_same(o.bbox, self.bbox, epsilon=epsilon)
+      return box_same(o.bbox, self.bbox, epsilon=epsilon)
+
+    def discrete_differences(self, o, epsilon=0.):
+      """
+      Returns None if o.bbox is different than self.bbox
+              otherwise, dictionary of:
+                attr -> set(values self doesn't have)
+      """
+      if not box_same(o.bbox, self.bbox, epsilon=epsilon):
+        return None
+
+      ret = {}
+      for key, ovals in o.discretes.iteritems():
+        vals = ovals.difference(self.discretes.get(key, ()))
+        if vals:
+          ret[key] = vals
+      return ret
 
 
     def discretes_contains(self, o):
@@ -311,7 +360,7 @@ class Cluster(object):
         keys = set(myd.keys()).intersection(set(od.keys()))
         
         for key in keys:
-            if len(od[key].intersection(myd[key])) < min(len(od[key]), len(myd[key]))-1:
+            if len(od[key].intersection(myd[key])) < min(len(od[key]), len(myd[key])):
                 return False
         return True
 
@@ -373,6 +422,7 @@ class Cluster(object):
         rule = SDRule(table, None, conditions=conds)
         rule.quality = rule.score = self.error
         rule.inf_state = self.inf_state
+        rule.c_range = self.c_range
         return rule
 
     def project(self, cols):
@@ -402,10 +452,12 @@ class Cluster(object):
     ancestors = property(__ancestors__)
     
     def __str__(self):
+        cr = "%.4f\t%.4f" % tuple(self.c_range)
         s = '\t'.join(['%s:(%.4f, %.4f)' % (col, bound[0], bound[1]) 
                    for col, bound in zip(self.cols, zip(*self.bbox))])
-        d = '\t'.join(["%s:%s" % (k, str(list(v))) for k,v in self.discretes.iteritems()])
-        return '%.4f\t%s\t%s' % (self.error, s, d)
+        d = '\t'.join(["%s:%s (%d els)" % (k, str(list(v)[:3]), len(v)) 
+          for k,v in self.discretes.iteritems()])
+        return '%.4f\t%s\t%s\t%s' % (self.error, cr, s, d)
         fmt = '\t'.join(['%.4f'] * len(self.bbox[0]))
         args = (self.error, fmt % self.bbox[0], fmt % self.bbox[1], str(self.discretes))
         return '%.6f\t%s\t%s\t%s' % args
@@ -433,7 +485,7 @@ def compute_clusters_threshold(clusters, nstds=1.):
     if not clusters:
         return 0.
     errors = [c.error for c in filter_bad_clusters(clusters)]
-    return np.percentile(errors, 90)
+    return np.percentile(errors, 70)
     npts = [c.npts for c in clusters]
     #npts = [1] * len(clusters)
     mean, std = wmean(errors, npts), wstd(errors, npts)        

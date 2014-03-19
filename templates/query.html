@@ -3,7 +3,8 @@
 <script type="text/javascript">
 var canned_queries = {
   intel : {
-    query: "SELECT avg(temp), stddev(temp), date_trunc('hour',date+time) as dt\n FROM readings\n WHERE date > '2004-3-1' and date < '2004-3-15'\n GROUP BY dt\n ORDER BY dt ASC",
+//    query: "SELECT avg(temp), stddev(temp), date_trunc('hour',date+time) as dt\n FROM readings\n WHERE date > '2004-3-1' and date < '2004-3-15'\n GROUP BY dt\n ORDER BY dt ASC",
+    query: "SELECT avg(temp), stddev(temp), hour\n FROM readings\n GROUP BY hour",
     db: "intel"
 	},
 	fec12 : {
@@ -21,6 +22,10 @@ var canned_queries = {
   movielens: {
     query: "SELECT avg(rating), title FROM ratings WHERE adventure = 1 GROUP BY title",
     db: "movielens"
+  },
+  med: {
+    query: "SELECT sum(total_cost), ccm_payor FROM lqm group by ccm_payor",
+    db: "med"
   }
            
 };

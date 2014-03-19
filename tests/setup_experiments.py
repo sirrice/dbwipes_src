@@ -91,6 +91,11 @@ if __name__ == '__main__':
   #setup_sigmod(3, 0.5)
   #setup_sigmod(4, 0.5)
   #setup_sigmod(5, 0.5)
-  setup_multicluster(2, .15)
+  #setup_multicluster(2, .15)
+  #setup_multicluster(3, .15)
+  #setup_multicluster(2, .2)
+  #setup_multicluster(3, .2)
+  setup_multicluster(4, .15)
+  setup_multicluster(4, .2)
 
 

@@ -1,3 +1,4 @@
+import random
 import sys
 import time
 import pdb
@@ -37,6 +38,7 @@ def parallel_debug(sharedobj, **kwargs):
     
 
 def parallel_runner(sharedobj, aggerr, **kwargs):
+    random.seed(2)
     sql = sharedobj.sql
     badresults = aggerr.keys
     goodresults = sharedobj.goodkeys.get(aggerr.agg.shortname, None)
@@ -114,6 +116,10 @@ def serial_hybrid(obj, aggerr, **kwargs):
           'aggerr':aggerr,
           'cols':cols,
           'c': obj.c,
+          'aggerr':aggerr,
+          'cols':cols,
+          'c': obj.c,
+          'c_range': [0.05, 1],
           'l' : 0.6,
           'msethreshold': 0.01,
           'max_wait':5
@@ -158,6 +164,8 @@ def serial_hybrid(obj, aggerr, **kwargs):
 
         start = time.time()
         clusters = normalize_cluster_errors(filter_bad_clusters(clusters))
+
+
         rules = clusters_to_rules(clusters, cols, full_table)
         #for r in rules: Basic.influence(hybrid, r)
         rules = [r for r in rules if str(r).strip() and valid_number(r.quality)]
@@ -168,8 +176,8 @@ def serial_hybrid(obj, aggerr, **kwargs):
 
 
         _logger.debug("clustering %d rules" % len(rules))
-        for r in rules[:5]:
-          _logger.debug("%.4f\t%s" % (r.quality, str(r)))
+        for r in rules[:10]:
+          _logger.debug("%.4f\t%.4f - %.4f\t%s" % (r.quality, r.c_range[0], r.c_range[1], str(r)))
 
 
         clustered_rules = hybrid.group_rules(rules, 8)
@@ -203,14 +211,19 @@ def serial_hybrid(obj, aggerr, **kwargs):
 
 
 def valid_table_cols(table, cols, kwargs={}):
+  bad_attrs = [
+    'id', 'err', 'pickup_id', 'pickup_address', 'epoch', 'userid', 
+    'mid', 'imdb', 'tstamp', "unknown", "action", "adventure", 
+    "animation", "children", "comedy", "crime", "documentary", 
+    "drama", "fantasy", "noir", "horro", "musical", "mystery", 
+    "romance", "scifi", "thriller", "war", "western", 'lin_ima', 'com_nam',
+    'total_charges', 'total_cost',  "totalcosts_ia", "totalcharges_ia",
+    "estimatednetrevenue_ia", "estimated_net_revenue", "lengthofstay"
+  ]
   attrs = table.domain
   ret = []
   for attr in attrs:
-    if attr.name in ['id', 'err', 'pickup_id', 'pickup_address', 'epoch', 'userid', 'mid', 'imdb', 'tstamp']:
-      continue
-    if attr.name in ["unknown", "action", "adventure", "animation", "children", "comedy", "crime", "documentary", "drama", "fantasy", "noir", "horro", "musical", "mystery", "romance", "scifi", "thriller", "war", "western"]:
-      continue
-    if attr.name in ['lin_ima', 'com_nam']:
+    if attr.name in bad_attrs:
       continue
     if attr.name in cols:
       continue
@@ -288,7 +301,6 @@ def parallel_hybrid(obj, aggerr, **kwargs):
       klass = MR 
       params.update({
         'use_mtuples': False,
-        'max_wait': 60,
         'c': 0,
         })
     else:
@@ -496,9 +508,6 @@ def merge_tables(tables):
     conts = set()
     for table in tables:
         for attr in table.domain:
-            if attr.varType == Orange.feature.Type.Discrete:
-                discretes[attr.name].extend(attr.values)
-            else:
                 conts.add(attr.name)
 
     features = []

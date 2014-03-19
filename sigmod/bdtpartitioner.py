@@ -175,7 +175,10 @@ class BDTTablesPartitioner(Basic):
       return [self.influence(r, idx) for r in samples]
 
     def estimate_inf(self, sample_infs):
-      return np.mean(map(np.mean, filter(bool, sample_infs)))
+      means = map(np.mean, filter(bool, sample_infs))
+      if means:
+        return np.mean(means)
+      return -inf
 
 
     @instrument
@@ -354,6 +357,11 @@ class BDTTablesPartitioner(Basic):
             return node
 
 
+        if self.time_exceeded():
+          _logger.debug("time exceeded %.2f > %d", (time.time()-self.start_time), self.max_wait)
+          return node
+
+
         #
         # compute scores for each attribute to split on
         #
@@ -440,8 +448,8 @@ class BDTTablesPartitioner(Basic):
     def update_sample_rates_helper(self, all_infs, samp_rate, idx):
         influences, counts = [], []
         for infs in all_infs:
-          inf = sum(np.array(infs)-self.inf_bounds[idx][0])
-          influences.append(inf)
+          influence = sum(np.array(infs)-self.inf_bounds[idx][0])
+          influences.append(influence)
           counts.append(len(infs) + 1.)
 
         total_inf = sum(influences)

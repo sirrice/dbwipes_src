@@ -132,9 +132,9 @@ class Naive(Basic):
                     continue
 
                 influences = self.influences(new_rule, cs=self.cs)
-                for c, inf in zip(self.cs, influences):
+                for c, influence in zip(self.cs, influences):
                     clone = new_rule.clone()
-                    clone.quality = inf
+                    clone.quality = influence
                     clone.__examples__ = None
 
                     if not valid_number(clone.quality):

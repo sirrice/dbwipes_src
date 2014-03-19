@@ -92,31 +92,44 @@ def get_ground_truth(db, datasetidx, c):
 
 def run(db, datasetidx, pp=None, **kwargs):
   expid = nextexpid(db)
-  pkeys = ['klassname', 'cols', 'epsilon', 'c', 'lambda']
   for params in make_params(**kwargs):
-    try:
-      run_id = str(params)
-      costs, rules, all_ids, table_size, learner = run_experiment(datasetidx, **params)
-      total_cost = costs['cost_total']
-      if params['klassname'] == 'Naive':
-        rules = rules[:1]
-        all_ids = all_ids[:1]
-        truth = all_ids[0]
-      else:
-        truth = get_ground_truth(db, datasetidx, params['c'])
+    run_params(db, datasetidx, expid, pp=pp, **params)
+  try:
+    complete(db, expid)
+  except:
+    import traceback
+    traceback.print_exc()
 
-      if truth == None:
-        pdb.set_trace()
-        raise RuntimeError("Could not find ground truth for %d, %.4f" % (datasetidx, params['c']))
 
-      all_stats = [compute_stats(ids, truth, table_size) for ids in all_ids]
 
-      row_id = None
+def run_params(db, datasetidx, expid, pp=None, **params):
+  pkeys = ['klassname', 'cols', 'epsilon', 'c', 'lambda']
+  try:
+    run_id = str(params)
+    costs, rules, all_ids, table_size, learner = run_experiment(datasetidx, **params)
+    total_cost = costs['cost_total']
+    if params['klassname'] == 'Naive':
+      rules = rules[:1]
+      all_ids = all_ids[:1]
+      truth = all_ids[0]
+    else:
+      truth = get_ground_truth(db, datasetidx, params['c'])
+
+    if truth == None:
+      pdb.set_trace()
+      raise RuntimeError("Could not find ground truth for %d, %.4f" % (datasetidx, params['c']))
+
+    all_stats = [compute_stats(ids, truth, table_size) for ids in all_ids]
+
+    row_id = None
+    cs = params.get('c', params.get('cs', []))
+    for c in cs:
       for (acc, p, r, f1), rule, ids in zip(all_stats, rules, all_ids):
         ids_str = ','.join(map(str, ids))
         isbest = rule.isbest
-        vals = [expid, str(datasetidx), kwargs.get('notes', '')]
+        vals = [expid, str(datasetidx), params.get('notes', '')]
         vals.extend([params.get(key, None) for key in pkeys])
+        vals[-2] = c
         vals.extend((total_cost, acc, p, r, f1, rule.quality, isbest, str(rule), ids_str))
         row_id = save_result(db, vals, costs)
         print mkfmt(vals[:-1]) % tuple(vals[:-1])
@@ -125,34 +138,27 @@ def run(db, datasetidx, pp=None, **kwargs):
         rules = rules[:1]
         all_ids = all_ids[:1]
         truth = all_ids[0]
-        c = params['c']
-        for timein, rule in learner.checkpoints_per_c[c]:
-          chk_ids = get_row_ids(rule, learner.full_table)
-          acc, p, r, f1 = compute_stats(chk_ids, truth, table_size)
-          ids_str = ','.join(map(str, map(int, chk_ids)))
-          vals = [expid, datasetidx, kwargs.get('notes', '')]
-          vals.extend([params.get(key, None) for key in pkeys])
-          vals.extend((timein, acc, p, r, f1, rule.quality, False, str(rule), True, ids_str))
-          row_id = save_checkpoint(db, vals)
-          print mkfmt(vals[:-1]) % tuple(vals[:-1])
+        if not isinstance(cs, list): cs = [cs]
+        for c in cs:
+          for timein, rule in learner.checkpoints_per_c[c]:
+            chk_ids = get_row_ids(rule, learner.full_table)
+            acc, p, r, f1 = compute_stats(chk_ids, truth, table_size)
+            ids_str = ','.join(map(str, map(int, chk_ids)))
+            vals = [expid, datasetidx, params.get('notes', '')]
+            vals.extend([params.get(key, None) for key in pkeys])
+            vals[-2] = c
+            vals.extend((timein, acc, p, r, f1, rule.quality, False, str(rule), True, ids_str))
+            row_id = save_checkpoint(db, vals)
+            print mkfmt(vals[:-1]) % tuple(vals[:-1])
 
+    if pp:
+      pass
+      #print_stats(pp, all_stats, rules, ','.join(map(lambda p: '%s:%s'%tuple(p), params.items())))
 
-
-
-      if pp:
-        pass
-        #print_stats(pp, all_stats, rules, ','.join(map(lambda p: '%s:%s'%tuple(p), params.items())))
-
-    except Exception as e:
-      import traceback
-      traceback.print_exc()
-      _logger.error(traceback.format_exc())
-  try:
-    complete(db, expid)
-  except:
+  except Exception as e:
     import traceback
     traceback.print_exc()
-
+    _logger.error(traceback.format_exc())
 
 def save_result(db, stat, costs):
   with db.begin() as conn:

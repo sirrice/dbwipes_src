@@ -93,15 +93,15 @@ class SVM(Basic):
         for ef, big_state, state, n in zip(self.bad_states, cluster.bad_states, cluster.bad_cards):
             if not state:
                 continue
-            inf = ef.recover(ef.remove(big_state, state, n))
-            bad_infs.append(inf)
+            influence = ef.recover(ef.remove(big_state, state, n))
+            bad_infs.append(influence)
         if not bad_infs:
             return -1e100000000
         
         if cluster.good_states:
             for ef, big_state, state, n in zip(self.good_states, cluster.good_states, cluster.good_cards):
-                inf = ef.recover(ef.remove(big_state, state))
-                good_infs.append(inf)
+                influence = ef.recover(ef.remove(big_state, state))
+                good_infs.append(inluencef)
         
 
         return self.l * np.mean(bad_infs) - (1. - self.l) * max(map(abs, good_infs))

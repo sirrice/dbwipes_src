@@ -1,5 +1,11 @@
 from functions import *
 
+
+def compute_bad_inf(bdelta, bcount, c):
+  return bdelta / pow(bcount, c)
+
+
+
 class ErrTypes(object):
     WRONG = 0
     EQUALTO = 1

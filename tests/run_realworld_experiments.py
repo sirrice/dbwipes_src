@@ -1,3 +1,4 @@
+from common import *
 from test import run
 
 if __name__ == '__main__':
@@ -6,6 +7,8 @@ if __name__ == '__main__':
   pp = PdfPages('figs/test.pdf')
 
   print "did you run setup_experiments.py to generate the testing env?"
+  run(db, 19, pp, klasses=[MR], max_wait=10*60, c=[0., .25, .5, .75, 1.], granularity=20)
+  exit()
 
   # run and gather "ground truth" for everything
   run(db, 0, pp, klasses=[Naive], max_wait=10*60, c=[0., .25, .5, .75, 1.], granularity=20, naive=True)
