@@ -4,6 +4,7 @@ log.txt
 *.index
 *.idx
 *.tree
+*.cache
 
 
 *.py[cod]
