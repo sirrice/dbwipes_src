@@ -66,6 +66,9 @@ def get_provenance(sharedobj, cols, keys):
 
 
 def get_provenance_split(sharedobj, cols, keys):
+    """
+    NOTE: #RNGE errors are when source table contains nulls.
+    """
     gb = sharedobj.parsed.select.nonaggs[0]
     schema = sharedobj.rules_schema
     schema.update(cols)
@@ -79,27 +82,39 @@ def get_provenance_split(sharedobj, cols, keys):
     print "dbquery cost %.4f" % (time.time() - start)
     if not len(rows): return None
 
+
     # create a column for the partitioning key so we can efficiently
     # apply as a mask
     cols = map(np.array, zip(*rows))
-    badmask = bad_row_mask(schema, cols[:-1])
-    cols = [col[badmask] for col in cols]
+
+    # NOTE: don't have nulls anymore
+    #badmask = bad_row_mask(schema, cols[:-1])
+    #cols = [col[badmask] for col in cols]
     keycol = np.array(cols.pop())
     schema.pop()
 
+    start = time.time()
     # this domain still allows nulls in discrete attrs
     domain, funcs = orange_schema_funcs(cols, schema)
-    table = construct_orange_table(domain, schema, funcs, cols)
-    # removed nulls from domain
-    clean_domain = domain_rm_nones(domain)
+    print "schema funcs %.4f" % (time.time() - start)
 
+    start = time.time()
+    table = construct_orange_table(domain, schema, funcs, cols)
+    # removed nulls from domain NOTE: no more nulls
+    #clean_domain = domain_rm_nones(domain)
+    clean_domain = domain
+    print "create complete table %.4f" % (time.time() - start)
+
+    start = time.time()
     tables = []
     data = table.to_numpyMA('ac')[0].data
     # find the rows that contain None values in discrete columns
+    print "got numpy array %.4f" % (time.time() - start)
 
+    start = time.time()
     for idx, key in enumerate(keys):
       # mask out rows that are not in this partition or have Nulls
-      partition_data = data[(keycol == key),:]# & badmask,:]
+      partition_data = data[(keycol == key),:]
       partition = Orange.data.Table(clean_domain, partition_data)
 
       #badrows = [row for row in partition if '#RNGE' in map(str, row)]
@@ -110,7 +125,7 @@ def get_provenance_split(sharedobj, cols, keys):
 
       tables.append(partition)
 
-
+    print "create orange time %.4f " % (time.time() - start)
     return tables
 
 
@@ -488,6 +503,7 @@ def orange_schema_funcs(cols, attrs):
   features = []
   funcs = []
   for idx, (attr, col) in enumerate(zip(attrs, cols)):
+    start = time.time()
     bdiscrete = is_discrete(attr, col)
 
     if bdiscrete:
@@ -496,6 +512,8 @@ def orange_schema_funcs(cols, attrs):
     else:
       feature = Orange.feature.Continuous(attr)
       func = lambda v: v is not None and float(v) or 0.
+
+    print "\tschema func for %s\t%.4f" % (attr, time.time() - start)
 
     features.append(feature)
     funcs.append(func)
@@ -515,12 +533,32 @@ def domain_rm_nones(domain):
 
 
 def construct_orange_table(domain, attrs, funcs, cols):
+  start = time.time()
   for idx in xrange(len(cols)):
-    cols[idx] = map(funcs[idx], cols[idx])
+    if funcs[idx] == str:
+      cols[idx] = cols[idx].astype(str)
+    else:
+      try:
+        f = np.frompyfunc(funcs[idx], 1, 1)
+        cols[idx] = funcs[idx](cols[idx])
+      except Exception as e:
+        _logger.debug(str(e))
+        f = np.vectorize(funcs[idx])
+        try:
+          cols[idx] = f(cols[idx])
+        except Exception as e:
+          _logger.debug(str(e))
+          cols[idx] = map(funcs[idx], cols[idx])
 
+  print "func(cols) %.4f" % (time.time() - start)
+
+  start = time.time()
   rows = map(list, zip(*cols))
+  print "transpose %.4f" % (time.time() - start)
+  start = time.time()
   table = Orange.data.Table(domain)
   table.extend(rows)
+  print "created table %.4f" % (time.time() - start)
   return table
 
 

@@ -14,91 +14,130 @@ from learners.cn2sd.refiner import *
 from bottomup.bounding_box import *
 from bottomup.cluster import *
 from util import *
+from crange import r_lte
 from basic import Basic
 from merger import Merger
+from errfunc import compute_bad_inf
 
 _logger = get_logger()
 
 
 class Blah(object):
-    def __init__(self, attrs, group, bad_deltas, bad_counts, good_deltas, good_counts, maxinf, mr, grouper):
-        self.attrs = attrs
-        self.grouper = grouper
-        self.group = group
-        self.bad_deltas = bad_deltas
-        self.bad_counts = bad_counts
-        self.good_deltas = good_deltas
-        self.good_counts = good_counts
-        self.mr = mr
-        c = mr.c
-        l = mr.l
+  def __init__(self, attrs, group, bad_deltas, bad_counts, 
+      good_deltas, good_counts, maxinf, mr, grouper):
 
-        self.bad_infs = [bd / (bc**c) for bd,bc in zip(self.bad_deltas, self.bad_counts) if bc]
-        self.good_infs = [abs(gd) for gd,gc in zip(self.good_deltas, self.good_counts) if gc]
-        self.bad_inf = l * (self.bad_infs and np.mean(self.bad_infs) or 0)
-        self.good_inf = (1. - l) * (self.good_infs and max(self.good_infs) or 0)
-        self.inf = self.bad_inf - self.good_inf
-        self.best_inf = self.bad_inf
-        self.best_tuple_inf = l * maxinf
+    self.attrs = attrs
+    self.grouper = grouper
+    self.group = group
+    self.inf_state = (bad_deltas, bad_counts, good_deltas, good_counts)
+    self.mr = mr
+    self.c_range = list(mr.c_range)
 
-        self.npts = sum(self.bad_counts + self.good_counts)
-        self.good_npts = sum(self.good_counts)
-        self.bad_npts = sum(self.bad_counts)
-        self.mean_pts = np.mean(self.bad_counts + self.good_counts)
+    c = mr.c
+    l = mr.l
 
+    good_infs = [abs(gd) for gd,gc in zip(good_deltas, good_counts) if gc]
+    self.good_inf = (1. - l) * (good_infs and max(good_infs) or 0)
+    self.good_skip = False # subpredicates can skip computing good_inf
 
-        self._rule = None
+    self.bad_inf_func = self.create_bad_inf_func(l)
+    self.inf_func = self.create_inf_func(l, self.good_inf)
+    self.bad_inf = self.bad_inf_func(c)
 
+    self.inf = self.bad_inf - self.good_inf
+    self.best_inf = self.bad_inf
+    self.best_tuple_inf = l * maxinf
+    self.maxinf = maxinf
+    self.npts = sum(bad_counts) + sum(good_counts)
 
+    self._rule = None
 
-    def __rule__(self):
-        if self._rule:
-            return self._rule
-        conds = []
-        for attr, gid in zip(self.attrs, self.group):
-            if attr.var_type ==  Orange.feature.Type.Discrete:
-                vals = [orange.Value(attr, v) for v in self.grouper.id2vals[attr][gid]]
-                conds.append(
-                        orange.ValueFilter_discrete(
-                            position = self.grouper.data.domain.index(attr),
-                            values = vals
-                        )
-                )
-            else:
-                vals = self.grouper.id2vals[attr][gid]
-                minv, maxv = vals[0], vals[1]
-                conds.append(
-                        Orange.data.filter.ValueFilterContinuous(
-                    oper=orange.ValueFilter.Between,
-                    position = self.grouper.data.domain.index(attr),
-                    min=minv,
-                    max=maxv)
-                        )
-        self._rule = SDRule(self.grouper.data, None, conds, None)
-        self._rule.quality = self.inf
+  def create_bad_inf_func(self, l):
+    bds, bcs, gds, gcs = self.inf_state
+    bds = [bd for bd, bc in zip(bds, bcs) if bc]
+    bcs = filter(bool, bcs)
+    pairs = zip(bds, bcs)
+    f = lambda c: l*compute_bad_score(bds, bcs, c)
+    return f
 
-        return self._rule
-    rule = property(__rule__)
+  def create_inf_func(self, l, ginf):
+    badf = self.create_bad_inf_func(l)
+    g = lambda c: (1.-l)*ginf + l*badf(c)
+    return g
+
+  def dominated_by(self, o, c_range=None):
+    if not c_range: c_range = self.c_range
+    mybads = map(self.bad_inf_func, c_range)
+    oinfs = map(o.inf_func, c_range)
+    if r_lte(mybads, oinfs):
+      if self.best_tuple_inf <= min(oinfs):
+        return True
+    return False
 
 
-    def __str__(self):
-        return 'inf %.4f\tpts %d/%d\tr/g %.4f - %.4f\t%s' % (self.inf, sum(self.bad_counts), sum(self.good_counts), self.bad_inf, self.good_inf, self.rule) 
+  def clone(self):
+    args = [self.attrs, self.group] 
+    args.extend(self.inf_state)
+    args.extend((self.maxinf, self.mr, self.grouper))
+    ret = Blah(*args)
+    ret._rule = self._rule.clone()
+    return ret
 
 
+  def __rule__(self):
+    if self._rule: return self._rule
 
-    def __hash__(self):
-        return hash(str(self.group))
+    conds = []
+    for attr, gid in zip(self.attrs, self.group):
+      if attr.var_type ==  Orange.feature.Type.Discrete:
+        vals = [orange.Value(attr, v) for v in self.grouper.id2vals[attr][gid]]
+        conds.append(
+          orange.ValueFilter_discrete(
+              position = self.grouper.data.domain.index(attr),
+              values = vals
+          )
+        )
+      else:
+        vals = self.grouper.id2vals[attr][gid]
+        minv, maxv = vals[0], vals[1]
+        conds.append(
+          Orange.data.filter.ValueFilterContinuous(
+            oper=orange.ValueFilter.Between,
+            position = self.grouper.data.domain.index(attr),
+            min=minv,
+            max=maxv
+          )
+        )
+    self._rule = SDRule(self.grouper.data, None, conds, None)
+    self._rule.quality = self.inf
 
-    def __eq__(self, o):
-        return hash(self) == hash(o)
+    return self._rule
+  rule = property(__rule__)
 
 
-    def __cmp__(self, o):
-        if self.inf > o.inf:
-            return 1
-        if self.inf == o.inf:
-            return 0
-        return -1
+  def __str__(self):
+    args = (
+      self.inf, 
+      sum(self.inf_state[1]), 
+      sum(self.inf_state[3]), 
+      self.bad_inf, self.good_inf, 
+      self.rule
+    ) 
+    return 'inf %.4f\tpts %d/%d\tr/g %.4f - %.4f\t%s' % args
+
+  def __hash__(self):
+      return hash(str(self.group))
+
+  def __eq__(self, o):
+      return hash(self) == hash(o)
+
+
+  def __cmp__(self, o):
+      if self.inf > o.inf:
+          return 1
+      if self.inf == o.inf:
+          return 0
+      return -1
 
 
 
@@ -186,62 +225,66 @@ class Grouper(object):
 
 
     def _get_infs(self, all_table_rows, err_funcs, g, bmaxinf):
-        ret = []
-        counts = []
-        maxinf = -1e1000000000000
-        for idx, ef, table_rows in zip(range(len(err_funcs)), err_funcs, all_table_rows):
-            rows = table_rows.get(g, [])
-            if not rows:
-                continue
-            
-            if bmaxinf:
-                for row in rows:
-                    curinf = self.influence_tuple(row, ef)
-                    maxinf = max(maxinf, curinf) 
+      """
+      Args:
+        all_table_rows: list, each item is a dict of
+                        group -> rows in that group (e.g., predicate)
+        g: the group
+        bmaxinf: want max inf of individual rows
+      """
+      ret = []
+      counts = []
+      maxinf = -1e1000000000000
+      iterator = zip(enumerate(err_funcs), all_table_rows)
+      for (idx, ef), table_rows in iterator:
+        rows = table_rows.get(g, [])
+        if not rows:
+          continue
+        
+        if bmaxinf:
+          for row in rows:
+            curinf = self.influence_tuple(row, ef)
+            maxinf = max(maxinf, curinf) 
 
-            ret.append(ef(rows))
-            counts.append(len(rows))
-        return ret, counts, maxinf
+        ret.append(ef(rows))
+        counts.append(len(rows))
+      return ret, counts, maxinf
+
+    def influence_tuple(self, row, ef):
+      if row[self.mr.SCORE_ID].value == -1e10000000000:
+        influence = ef((row,))
+        row[self.mr.SCORE_ID] = influence
+      return row[self.mr.SCORE_ID].value
+
+    def groups_by_attrs(self, attrs, valid_groups, table):
+      """scan table once and group tuples by their respective groups"""
+      groups = defaultdict(list)
+      for row in table:
+        group = tuple([self.gbfuncs[attr](row[attr]) for attr in attrs])
+        if group in valid_groups:
+          groups[group].append(row)
+      return groups
 
 
     def __call__(self, attrs, valid_groups):
-        valid_groups = set(valid_groups)
-        start = time.time()
-        bad_table_rows = []
-        good_table_rows = []
-        for table in self.mr.bad_tables:
-            bad_table_rows.append(self.table_influence(attrs, valid_groups, table))
-        for table in self.mr.good_tables:
-            good_table_rows.append(self.table_influence(attrs, valid_groups, table))
-#        print "scan time\t", (time.time() - start)
+      valid_groups = set(valid_groups)
+      bad_table_rows = []
+      good_table_rows = []
+      for table in self.mr.bad_tables:
+        bad_table_rows.append(self.groups_by_attrs(attrs, valid_groups, table))
+      for table in self.mr.good_tables:
+        good_table_rows.append(self.groups_by_attrs(attrs, valid_groups, table))
 
 
-        start = time.time()
-        for g in valid_groups:
-            bds, bcs, maxinf = self._get_infs(bad_table_rows, self.mr.bad_err_funcs, g, True)
-            gds, gcs, _ = self._get_infs(good_table_rows, self.mr.good_err_funcs, g, False)
-            if not bcs:
-                continue
-            yield Blah(attrs, g, bds, bcs, gds, gcs, maxinf, self.mr, self)
-#        print "comp infs\t", (time.time() - start)
-
-
-    def influence_tuple(self, row, ef):
-        if row[self.mr.SCORE_ID].value == -1e10000000000:
-            influence = ef((row,))
-            row[self.mr.SCORE_ID] = influence
-        return row[self.mr.SCORE_ID].value
+      for g in valid_groups:
+        bds, bcs, maxinf = self._get_infs(bad_table_rows, self.mr.bad_err_funcs, g, True)
+        gds, gcs, _ = self._get_infs(good_table_rows, self.mr.good_err_funcs, g, False)
+        if not bcs:
+          continue
+        yield Blah(attrs, g, bds, bcs, gds, gcs, maxinf, self.mr, self)
 
 
 
-    def table_influence(self, attrs, valid_groups, table):
-        """scan table once and group tuples by their respective groups"""
-        groups = defaultdict(list)
-        for row in table:
-            group = tuple([self.gbfuncs[attr](row[attr]) for attr in attrs])
-            if group in valid_groups:
-                groups[group].append(row)
-        return groups
 
     def initial_groups(self):
         for attr, n in self.gbids.items():

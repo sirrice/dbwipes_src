@@ -81,8 +81,10 @@ def serial_hybrid(obj, aggerr, **kwargs):
     db = connect(obj.dbname)
     obj.db = db
     start = time.time()
-    bad_tables = get_provenance_split(obj, aggerr.agg.cols, aggerr.keys)
-    good_tables = get_provenance_split(obj, aggerr.agg.cols, obj.goodkeys[aggerr.agg.shortname]) or []
+    all_keys = list(chain(aggerr.keys, obj.goodkeys[aggerr.agg.shortname]))
+    all_tables = get_provenance_split(obj, aggerr.agg.cols, all_keys)
+    bad_tables = all_tables[:len(aggerr.keys)]
+    good_tables = all_tables[len(aggerr.keys):]
     costs['data_load'] = time.time() - start
 
     _logger.debug("bad table counts:  %s" % ', '.join(map(str, map(len, bad_tables))))
@@ -102,14 +104,16 @@ def serial_hybrid(obj, aggerr, **kwargs):
 
         bad_tables = [rm_attr_from_domain(t, torm) for t in bad_tables]
         good_tables = [rm_attr_from_domain(t, torm) for t in good_tables]
-        (bad_tables, good_tables), all_full_table = reconcile_tables(bad_tables, good_tables)
-        _, full_table = reconcile_tables(bad_tables)
+        all_full_table = union_tables(bad_tables, good_tables)
+        full_table = union_tables(bad_tables)
+
         costs['data_setup'] = time.time() - start
 
 
         # make sure aggerr keys and tables are consistent one last time
         if len(bad_tables) != len(aggerr.keys):
-          raise RuntimeError("#badtables != #aggerr keys")
+          pdb.set_trace()
+          raise RuntimeError("#badtables (%d) != #aggerr keys (%d)" % (len(bad_tables), len(aggerr.keys)))
 
 
         params = {
@@ -119,10 +123,11 @@ def serial_hybrid(obj, aggerr, **kwargs):
           'aggerr':aggerr,
           'cols':cols,
           'c': obj.c,
-          'c_range': [0.05, 1],
+          'c_range': [0.01, 2],
           'l' : 0.6,
           'msethreshold': 0.01,
-          'max_wait':5
+          'max_wait':5,
+          'DEBUG': True
         }
         # msethreshold=0.01,
         # k=10,
@@ -135,6 +140,7 @@ def serial_hybrid(obj, aggerr, **kwargs):
         if aggerr.agg.func.__class__ in (errfunc.SumErrFunc, errfunc.CountErrFunc):
           klass = MR 
           params.update({
+            'use_cache': True,
             'use_mtuples': False,
             'granularity': 100
             })
@@ -159,28 +165,16 @@ def serial_hybrid(obj, aggerr, **kwargs):
         start = time.time()
         hybrid = klass(**params)
         clusters = hybrid(all_full_table, bad_tables, good_tables)
+        rules = clusters_to_rules(clusters, cols, full_table)
         print "nclusters: %d" % len(clusters)
         costs['rules_get'] = time.time() - start
-
-        start = time.time()
-        clusters = normalize_cluster_errors(filter_bad_clusters(clusters))
-
-
-        rules = clusters_to_rules(clusters, cols, full_table)
-        #for r in rules: Basic.influence(hybrid, r)
-        rules = [r for r in rules if str(r).strip() and valid_number(r.quality)]
-        rules.sort(key=lambda r: r.quality, reverse=True)
-        rules = rules[:150]
-        rules = list(set(rules))
-        costs['rules_prune'] = time.time() - start
-
 
         _logger.debug("clustering %d rules" % len(rules))
         for r in rules[:10]:
           _logger.debug("%.4f\t%.4f - %.4f\t%s" % (r.quality, r.c_range[0], r.c_range[1], str(r)))
 
 
-        clustered_rules = hybrid.group_rules(rules, 8)
+        clustered_rules = hybrid.group_rules(rules, 5)
         rules = clustered_rules
         costs['rules_cluster'] = time.time() - start
 
@@ -191,7 +185,7 @@ def serial_hybrid(obj, aggerr, **kwargs):
     
     # return the best rules first in the list
     start = time.time()
-    rules.sort(key=lambda r: r.quality, reverse=True)
+    rules.sort(key=lambda r: r.c_range[0])
     rules = [r.simplify(all_full_table) for r in rules[:10]]
     costs['rules_simplify'] = time.time() - start
 
@@ -210,38 +204,7 @@ def serial_hybrid(obj, aggerr, **kwargs):
 
 
 
-def valid_table_cols(table, cols, kwargs={}):
-  bad_attrs = [
-    'id', 'err', 'pickup_id', 'pickup_address', 'epoch', 'userid', 
-    'mid', 'imdb', 'tstamp', "unknown", "action", "adventure", 
-    "animation", "children", "comedy", "crime", "documentary", 
-    "drama", "fantasy", "noir", "horro", "musical", "mystery", 
-    "romance", "scifi", "thriller", "war", "western", 'lin_ima', 'com_nam',
-    'total_charges', 'total_cost',  "totalcosts_ia", "totalcharges_ia",
-    "estimatednetrevenue_ia", "estimated_net_revenue", "lengthofstay"
-  ]
-  attrs = table.domain
-  ret = []
-  for attr in attrs:
-    if attr.name in bad_attrs:
-      continue
-    if attr.name in cols:
-      continue
-    if attr.name in kwargs.get('ignore_attrs',[]):
-      continue
-    if attr.name.endswith('id') and attr.name != 'moteid':
-      continue
-
-    nunique = len(set([row[attr].value for row in table]))
-    print "%s:\tnunique %s" % (attr.name, nunique)
-
-    if attr.varType != orange.VarTypes.Continuous:
-      if nunique > 100 and nunique > 0.7 * len(table) or nunique > 7000:
-        print "%s skipped" % attr.name
-        continue
-    ret.append(attr.name)
-  return ret
-    
+   
 
 def parallel_hybrid(obj, aggerr, **kwargs):
 

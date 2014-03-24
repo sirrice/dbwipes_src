@@ -23,7 +23,8 @@ from util import *
 from basic import Basic
 from sampler import Sampler
 from merger import Merger
-from rangemerger import RangeMerger, get_frontier
+from rangemerger import RangeMerger
+from crange import Frontier, r_vol, r_union
 from settings import *
 from bdtpartitioner import *
 
@@ -87,19 +88,22 @@ class BDT(Basic):
 
 
     def nodes_to_clusters(self, nodes, table):
-        clusters = []
-        for node in nodes:
-            node.rule.quality = node.influence
-            rules = [node.rule]
-            #rules = [r.simplify() for r in rules]
-            fill_in_rules(rules, table, cols=self.cols)
-            cluster = Cluster.from_rule(rules[0], self.cols)
-            cluster.states = node.states
-            cluster.cards = node.cards
-            clusters.append(cluster)
-        return clusters
+      clusters = []
+      for node in nodes:
+        node.rule.quality = node.influence
+        rules = [node.rule]
+        fill_in_rules(rules, table, cols=self.cols)
+        cluster = Cluster.from_rule(rules[0], self.cols)
+        cluster.states = node.states
+        cluster.cards = node.cards
+        clusters.append(cluster)
+      return clusters
 
     def nodes_to_popular_clusters(self, nodes, table):
+      """
+      Look for clauses found in more than X% of the nodes
+      and turn them into clusters
+      """
       if not nodes: return []
       from collections import Counter
       counter = Counter()
@@ -114,7 +118,7 @@ class BDT(Basic):
             counter[newr] += 1
             str_to_rule[newr] = newr
 
-      thresh = np.percentile(counter.values(), 70)
+      thresh = np.percentile(counter.values(), 80)
       rules = []
       for strrule, count in counter.iteritems():
         if count >= thresh:  #0.25 * len(nodes):
@@ -147,33 +151,57 @@ class BDT(Basic):
 
 
     @instrument
-    def merge(self, clusters):
+    def merge(self, clusters, nonleaves):
         if len(clusters) <= 1:
             return clusters
+
         start = time.time()
-        clusters.sort(key=lambda c: c.error, reverse=True)
-        thresh = compute_clusters_threshold(clusters, nstds=1.5)
-        is_mergable = lambda c: c.error >= thresh
         if [attr for attr in self.full_table.domain if attr.varType == orange.VarTypes.Discrete]:
-            use_mtuples = self.use_mtuples
-            #use_mtuples = False
+          use_mtuples = self.use_mtuples
+          #use_mtuples = False
         else:
-            use_mtuples = self.use_mtuples
+          use_mtuples = self.use_mtuples
         params = dict(self.params)
         params.update({
+          'learner_hash': hash(self),
+          'learner' : self,
           'cols' : self.cols,
-          'influence' : lambda c: self.influence_cluster(c),
-          'is_mergable' : is_mergable,
-          'use_mtuples' : use_mtuples,
           'c_range': self.c_range,
-          'learner' : self
+          'use_mtuples' : use_mtuples,
+          'influence' : lambda c: self.influence_cluster(c)
         })
         self.merger = RangeMerger(**params)
         #self.merger = Merger(**params)
-        merged_clusters = self.merger(clusters)
+
+
+        _logger.debug("compute initial cluster errors. %d clusters", len(clusters))
+        start = time.time()
+        for c in clusters:
+          c.error = self.influence_cluster(c)
+        self.stats['init_cluster_errors'] = [time.time()-start, 1]
+
+        #
+        # Figure out what nonleafs to merge
+        #
+        _logger.debug("compute initial frontier")
+        self.merger.setup_stats(clusters)
+        frontier, _ = self.merger.get_frontier(clusters)
+        frontier = list(frontier)
+        to_add = []
+        _logger.debug("get nonleaves containing frontier")
+        for nonleaf in nonleaves:
+          for c in frontier:
+            if nonleaf.contains(c):
+              nonleaf.error = self.influence_cluster(nonleaf)
+              frontier.append(nonleaf)
+              break
+
+        _logger.debug("second merger pass")
+        to_add.extend(clusters)
+        merged_clusters = self.merger(to_add)
+        #merged_clusters = self.merger(clusters)
         self.merge_cost = time.time() - start
 
-        merged_clusters.sort(key=lambda c: c.error, reverse=True)
         self.merge_stats(self.merger.stats, 'merge_')
         return merged_clusters
 
@@ -278,124 +306,90 @@ class BDT(Basic):
         ret.extend(low_influence)
         return ret
 
-    @instrument
-    def load_from_cache(self):
-        import bsddb as bsddb3
-        self.cache = bsddb3.hashopen('./dbwipes.cache')
-        try:
-            myhash = str(hash(self))
-            if myhash in self.cache and self.use_cache:
-                dicts, nonleaf_dicts, errors = json.loads(self.cache[myhash])
-                clusters = map(Cluster.from_dict, dicts)
-                nonleaf_clusters = map(Cluster.from_dict, nonleaf_dicts)
-                for err, c in zip(errors, chain(clusters, nonleaf_clusters)):
-                  c.error = err
-                return clusters, nonleaf_clusters
-        except:
-            pass
-        finally:
-            self.cache.close()
-        return None, None
-
-    @instrument
-    def cache_results(self, clusters, nonleaf_clusters):
-        import bsddb as bsddb3
-        # save the clusters in a dictionary
-        if self.use_cache:
-            myhash = str(hash(self))
-            self.cache = bsddb3.hashopen('./dbwipes.cache')
-            try:
-                dicts = [c.to_dict() for c in clusters]
-                nonleaf_dicts = [c.to_dict() for c in nonleaf_clusters]
-                errors = [c.error for c in chain(clusters, nonleaf_clusters)]
-                self.cache[myhash] = json.dumps((dicts, nonleaf_dicts, errors))
-            except:
-                pass
-            finally:
-                self.cache.close()
-
-
 
     @instrument
     def get_partitions(self, full_table, bad_tables, good_tables, **kwargs):
         clusters, nonleaf_clusters = self.load_from_cache()
         if clusters:
-            return clusters, nonleaf_clusters
+          return clusters, nonleaf_clusters
 
 
+        # 
+        # Setup and run partitioner for bad outputs
+        #
         params = dict(self.params)
         params.update(kwargs)
         params['SCORE_ID'] = self.SCORE_ID
         params['err_funcs'] = self.bad_err_funcs
         max_wait = params.get('max_wait', None)
+        bad_max_wait = good_max_wait = None
         if max_wait:
-          params['max_wait'] = max_wait * 2. / 3.
+          bad_max_wait = max_wait * 2. / 3.
+          good_max_wait = max_wait / 3.
 
 
         start = time.time()
+        params['max_wait'] = bad_max_wait
         bpartitioner = BDTTablesPartitioner(**params)
-        bnodes = list(bpartitioner(bad_tables, full_table))
-        bnodes = list(bpartitioner.root.leaves)
-        bnodes.sort(key=lambda n: n.influence, reverse=True)
-        _logger.debug("bad nodes --> clusters")
-        bclusters = self.nodes_to_clusters(bnodes, full_table)
+        bpartitioner(bad_tables, full_table)
         self.cost_partition_bad = time.time() - start
         
-
-        _logger.debug("clone badnodes")
-        htree = bpartitioner.root.clone()
-        for hnode in htree.nodes:
+        tree = bpartitioner.root.clone()
+        for hnode in tree.nodes:
           hnode.frombad = True
         _logger.debug('\npartitioning bad tables done\n')
+
+        start = time.time()
+
+        # 
+        # Setup and run partitioner for good outputs
+        #
         inf_bound = [inf, -inf]
         for ib in bpartitioner.inf_bounds:
-          inf_bound[0] = min(ib[0], inf_bound[0])
-          inf_bound[1] = max(ib[1], inf_bound[1])
+          inf_bound = r_union(ib, inf_bound)
+        inf_bounds = [list(inf_bound) for t in good_tables]
+        print 'partitioner inf_bound: %.4f - %.4f' % tuple(inf_bound)
 
-        start = time.time()
         params['err_funcs'] = self.good_err_funcs
-        if isinstance(max_wait, int):
-          params['max_wait'] = max_wait / 3.
+        params['max_wait'] = good_max_wait
         hpartitioner = BDTTablesPartitioner(**params)
-        hpartitioner.inf_bounds = [list(inf_bound) for t in good_tables]
-        hnodes = list(hpartitioner(good_tables, full_table, root=htree))
-        hnodes = list(hpartitioner.root.leaves)
-        hnodes = filter(lambda n: not n.frombad, hnodes)
-        hnodes.sort(key=lambda n: n.influence, reverse=True)
-        hclusters = self.nodes_to_clusters(hnodes, full_table)
+        hpartitioner.inf_bounds = inf_bounds
+        hpartitioner(good_tables, full_table, root=tree)
+
+        self.stats['partition_good'] = [time.time()-start, 1]
         self.cost_partition_good = time.time() - start
 
-        _logger.debug( "==== Best Bad Clusters (%d total) ====" , len(bnodes))
-        _logger.debug( '\n'.join(map(str, bnodes[:10])))
-        _logger.debug( "==== Best Good Clusters (%d total) ====" , len(hnodes))
-        _logger.debug( '\n'.join(map(str, hnodes[:10])))
+
+        leaves = list(tree.leaves)
+        nonleaves = list(tree.nonleaves)
+        _logger.debug( "==== Best Leaf Nodes (%d total) ====" , len(leaves))
+        _logger.debug( '\n'.join(map(str, sorted(leaves, key=lambda n: n.influence)[:10])))
 
 
         start = time.time()
-        clusters = self.intersect(bclusters, hclusters)
-        nonleaves = []
-        nonleaves.extend(bpartitioner.root.nonleaves)
         popular_clusters = self.nodes_to_popular_clusters(nonleaves, full_table)
-        nonleaf_clusters = self.nodes_to_clusters(
-            nonleaves,
-            full_table
-        )
-        nonleaf_clusters = filter_bad_clusters(nonleaf_clusters)
+        nonleaf_clusters = self.nodes_to_clusters(nonleaves, full_table)
+        self.stats['intersect_partitions'] = [time.time()-start, 1]
         self.cost_split = time.time() - start
 
-        clusters = filter_bad_clusters(clusters)
+        # NOTE: if good partitioner starts with tree from bad partitioner then
+        #       no need to intersect their results
+        #clusters = self.intersect(bclusters, hclusters)
+        clusters = self.nodes_to_clusters(tree.leaves, full_table)
         clusters.extend(popular_clusters)
 
-        start = time.time()
-        for c in chain(clusters, nonleaf_clusters):
-          c.error = self.influence_cluster(c)
-        self.stats['init_cluster_errors'] = [time.time()-start, 1]
+        if False:
+          start = time.time()
+          for c in chain(clusters, nonleaf_clusters):
+            if not c.inf_state:
+              c.error = self.influence_cluster(c)
+          self.stats['init_cluster_errors'] = [time.time()-start, 1]
 
 
         self.cache_results(clusters, nonleaf_clusters)
 
-        self.merge_stats(bpartitioner.stats)
-        self.merge_stats(hpartitioner.stats)
+        self.merge_stats(bpartitioner.stats, 'bdtp_bad_')
+        self.merge_stats(hpartitioner.stats, 'bdtp_good_')
 
 
         return clusters, nonleaf_clusters
@@ -412,34 +406,65 @@ class BDT(Basic):
         clusters, nomerge_clusters = self.get_partitions(full_table, bad_tables, good_tables, **kwargs)
         self.all_clusters = clusters
 
-        for c in nomerge_clusters:
-          c.inf_func = c.create_inf_func(self.l)
-          c.c_range = list(self.c_range)
 
-
-        start = time.time()
         _logger.debug('merging')
-        final_clusters = self.merge(clusters)        
-        final_clusters.extend(nomerge_clusters)
-        final_clusters = filter_bad_clusters(final_clusters)
-
-        # if running range mergen
-        final_clusters, rms = get_frontier(final_clusters)
+        final_clusters = self.merge(clusters, nomerge_clusters)        
+        #final_clusters.extend(nomerge_clusters)
 
         self.final_clusters = final_clusters
-        self.cost_merge = time.time() - start
 
 
         self.costs.update({
           'cost_partition_bad' : self.cost_partition_bad,
           'cost_partition_good' : self.cost_partition_good,
-          'cost_split' : self.cost_split,
-          'cost_merge' : self.cost_merge
+          'cost_split' : self.cost_split
         })
         
         _logger.debug("=== Costs ===")
-        for key, stat in sorted(self.stats.items()):
+        for key, stat in sorted(self.stats.items(), key=lambda p: p[1][0]):
           _logger.debug("%.4f\t%d\t%s", stat[0], stat[1], key)
 
         return self.final_clusters
+
+
+
+
+    @instrument
+    def load_from_cache(self):
+      import bsddb as bsddb3
+      self.cache = bsddb3.hashopen('./dbwipes.cache')
+      try:
+        myhash = str(hash(self))
+        if myhash in self.cache and self.use_cache:
+          dicts, nonleaf_dicts, errors = json.loads(self.cache[myhash])
+          clusters = map(Cluster.from_dict, dicts)
+          nonleaf_clusters = map(Cluster.from_dict, nonleaf_dicts)
+          for err, c in zip(errors, chain(clusters, nonleaf_clusters)):
+            c.error = err
+          return clusters, nonleaf_clusters
+      except Exception as e:
+        print e
+        pass
+      finally:
+        self.cache.close()
+      return None, None
+
+    @instrument
+    def cache_results(self, clusters, nonleaf_clusters):
+      import bsddb as bsddb3
+      # save the clusters in a dictionary
+      if self.use_cache:
+        myhash = str(hash(self))
+        self.cache = bsddb3.hashopen('./dbwipes.cache')
+        try:
+          dicts = [c.to_dict() for c in clusters]
+          nonleaf_dicts = [c.to_dict() for c in nonleaf_clusters]
+          errors = [c.error for c in chain(clusters, nonleaf_clusters)]
+          self.cache[myhash] = json.dumps((dicts, nonleaf_dicts, errors))
+        except:
+          pass
+        finally:
+          self.cache.close()
+
+
 

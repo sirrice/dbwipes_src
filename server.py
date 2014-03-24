@@ -273,7 +273,7 @@ def debug():
               c=obj.c,
               complexity_multiplier=4.5,
               l=0.9,
-              max_wait=21,
+              max_wait=10,
             )
             cost = time.time() - start
             print "end to end took %.4f" % cost

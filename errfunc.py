@@ -2,8 +2,30 @@ from functions import *
 
 
 def compute_bad_inf(bdelta, bcount, c):
-  return bdelta / pow(bcount, c)
+  if bcount == 0:
+    return 0
+  return float(bdelta / pow(bcount, c))
 
+def compute_bad_score(bds, bcs, c):
+  if not bds: return -float('inf')
+
+  # smoothing
+  smooth = .01
+  bcs = [bc + smooth for bc in bcs]
+  total = float(sum(bcs))
+  if total == 0:
+    return -float('inf')
+
+
+  topbots = zip(bds, bcs)
+  binfs = [compute_bad_inf(top, bot, c) for top, bot in topbots]
+
+  weights = [bc/total for bc in bcs]
+  try:
+    return np.average(binfs, weights=weights)
+  except:
+    import pdb
+    pdb.set_trace()
 
 
 class ErrTypes(object):

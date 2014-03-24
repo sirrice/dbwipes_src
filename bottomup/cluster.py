@@ -15,7 +15,7 @@ from util.prob import *
 from util.misc import valid_number
 from bounding_box import *
 from learners.cn2sd.rule import SDRule
-from errfunc import compute_bad_inf
+from errfunc import compute_bad_inf, compute_bad_score
 
 nan = float('nan')
 inf = float('inf')
@@ -24,7 +24,7 @@ inf = float('inf')
 class Cluster(object):
     _id = 0
     
-    def __init__(self, bbox, error, cols, parents=[], discretes={}, **kwargs):
+    def __init__(self, bbox, error, cols, parents=None, discretes=None, **kwargs):
         """
         @param cols the set of continuous columns
         """
@@ -33,7 +33,7 @@ class Cluster(object):
         self.discretes = defaultdict(set)
         self.centroid = tuple([np.mean((p1, p2)) for p1, p2 in zip(*self.bbox)])
         self.cols = cols
-        self.parents = parents
+        self.parents = parents or []
         self.max_anc_error = self.max_ancestor_error()
         self.npts = kwargs.get('npts', 1)
         self.kwargs = kwargs
@@ -76,10 +76,13 @@ class Cluster(object):
         self.good_states = []
         self.good_cards = []
 
+        self.rule = None
+
         Cluster._id += 1
 
-        for k,vs in discretes.iteritems():
-            self.discretes[k].update(vs)
+        if discretes:
+          for k,vs in discretes.iteritems():
+              self.discretes[k].update(vs)
 
         self.hash = None
         self._bound_hash = None
@@ -94,8 +97,13 @@ class Cluster(object):
         maxg = max(vs)
       else:
         maxg = 0
-      topbots = [pair for pair in zip(*inf_state[:2]) if valid_number(pair[0]) and valid_number(pair[1])]
-      f = lambda c: l*np.mean([compute_bad_inf(top, bot, c) for top, bot in topbots if bot]) - (1.-l)*maxg
+      bds, bcs = [], []
+      for idx in xrange(len(inf_state[0])):
+        bd, bc = inf_state[0][idx], inf_state[1][idx]
+        if valid_number(bd) and valid_number(bc):
+          bds.append(bd)
+          bcs.append(bc)
+      f = lambda c: l*compute_bad_score(bds, bcs, c) - (1.-l)*maxg
       return f
 
 
@@ -117,6 +125,8 @@ class Cluster(object):
 
     def to_dict(self):
         d = dict(self.__dict__)
+        del d['rule']
+        del d['inf_func']
         if 'parents' in d:
             del d['parents']
         if 'discretes' in d:
@@ -135,6 +145,7 @@ class Cluster(object):
         c.inf_func = self.inf_func
         c.inf_state = self.inf_state
         c.c_range = list(self.c_range)
+        c.rule = self.rule
         return c
 
     def max_ancestor_error(self):
@@ -267,7 +278,9 @@ class Cluster(object):
             
         bbox = (tuple(mins), tuple(maxs))
         error = error or rule.quality
-        return Cluster(bbox, error, cont_cols, parents=parents, discretes=discretes, npts=len(rule.examples))
+        cluster = Cluster(bbox, error, cont_cols, parents=parents, discretes=discretes, npts=len(rule.examples))
+        cluster.rule = rule
+        return cluster
 
     def adjacent(self, o, thresh=0.7):
         """@return True if they overlap on one or more continuous attribute, 
@@ -379,9 +392,10 @@ class Cluster(object):
 
 
     def to_rule(self, table, cols, cont_dists=None, disc_dists=None):
-        """
-        @param cols list of attribute names
-        """
+      """
+      @param cols list of attribute names
+      """
+      if not self.rule:
         domain = table.domain
         attrnames = [attr.name for attr in domain]
         cont_dists = cont_dists or dict(zip(attrnames, Orange.statistics.basic.Domain(table)))
@@ -389,41 +403,44 @@ class Cluster(object):
         conds = []
 
         for col, bound in zip(self.cols, zip(*self.bbox)):
-            attr = domain[col]
-            pos = domain.index(attr)
-            table_bound = cont_dists[attr.name]
-            minv, maxv = max(table_bound.min, bound[0]), min(table_bound.max, bound[1])
-            if maxv - minv > 0.9 * (table_bound.max-table_bound.min):
-                continue
-            
-            conds.append(
-                orange.ValueFilter_continuous(
-                    position=pos,
-                    max=bound[1],
-                    min=bound[0]
-                )
+          attr = domain[col]
+          pos = domain.index(attr)
+          table_bound = cont_dists[attr.name]
+          minv, maxv = max(table_bound.min, bound[0]), min(table_bound.max, bound[1])
+          if maxv - minv > 0.9 * (table_bound.max-table_bound.min):
+            continue
+          
+          conds.append(
+            orange.ValueFilter_continuous(
+                position=pos,
+                max=bound[1],
+                min=bound[0]
             )
+          )
 
         for disc_name, vidxs in self.discretes.iteritems():
-            attr = domain[disc_name]
-            disc_pos = domain.index(attr)
-            vals = [orange.Value(attr, attr.values[int(vidx)]) for vidx in vidxs if int(vidx) < len(attr.values)]
+          attr = domain[disc_name]
+          disc_pos = domain.index(attr)
+          vals = [orange.Value(attr, attr.values[int(vidx)]) for vidx in vidxs if int(vidx) < len(attr.values)]
 
-            if not vals or len(vals) == len(disc_dists[attr.name]):
-                continue
-            
-            conds.append(
-                orange.ValueFilter_discrete(
-                    position = disc_pos,
-                    values=vals
-                )
+          if not vals or len(vals) == len(disc_dists[attr.name]):
+            continue
+          
+          conds.append(
+            orange.ValueFilter_discrete(
+                position = disc_pos,
+                values=vals
             )
+          )
 
         rule = SDRule(table, None, conditions=conds)
-        rule.quality = rule.score = self.error
-        rule.inf_state = self.inf_state
-        rule.c_range = self.c_range
-        return rule
+        self.rule = rule
+
+      rule = self.rule
+      rule.quality = rule.score = self.error
+      rule.inf_state = self.inf_state
+      rule.c_range = self.c_range
+      return rule
 
     def project(self, cols):
         """
@@ -464,7 +481,11 @@ class Cluster(object):
 
     def __hash__(self):
         if self.hash is None:
-            self.hash = hash((self.error, self.bbox, str(self.discretes)))
+          state = ()
+          if self.inf_state:
+            state = tuple(map(tuple, self.inf_state))
+
+          self.hash = hash((tuple(self.c_range), state, self.bbox, str(sorted(self.discretes.items()))))
         return self.hash
 
     @property

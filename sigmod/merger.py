@@ -35,7 +35,6 @@ class Merger(object):
 
     def __init__(self, **kwargs):
         self.min_clusters = 1
-        self.is_mergable = lambda c: c.error > 0 
         self.influence = None
         self.learner = kwargs.get('learner', None)
 
@@ -50,6 +49,8 @@ class Merger(object):
         # False if output from merger
         self.partitions_complete = kwargs.get('partitions_complete', True)
 
+        self.DEBUG = kwargs.get('DEBUG', False)
+
 
         self.CACHENAME = './dbwipes.merger.cache'
 
@@ -59,7 +60,6 @@ class Merger(object):
 
     def set_params(self, **kwargs):
         self.min_clusters = kwargs.get('min_clusters', self.min_clusters)
-        self.is_mergable = kwargs.get('is_mergable', self.is_mergable)
         # lambda cluster: influence_value_of(cluster)
         self.influence = kwargs.get('influence', self.influence)
         self.learner = kwargs.get('learner', self.learner)
@@ -206,21 +206,24 @@ class Merger(object):
 
     @instrument
     def merge(self, cluster, neighbor, clusters):
-        newbbox = bounding_box(cluster.bbox, neighbor.bbox)
-        cidxs = self.get_intersection(newbbox)
-        intersecting_clusters = [clusters[cidx] for cidx in cidxs]
-        intersecting_clusters = filter(cluster.discretes_overlap, intersecting_clusters)
+      """
+      @deprecated!
+      """
+      newbbox = bounding_box(cluster.bbox, neighbor.bbox)
+      cidxs = self.get_intersection(newbbox)
+      intersecting_clusters = [clusters[cidx] for cidx in cidxs]
+      intersecting_clusters = filter(cluster.discretes_overlap, intersecting_clusters)
 
-        merged = Cluster.merge(cluster, neighbor, intersecting_clusters, self.point_volume)
-        if not merged or not merged.volume:
-            return None
-        
-        if self.use_mtuples and cluster.discretes_same(neighbor):
-            intersecting_clusters = filter(cluster.discretes_same, intersecting_clusters)
-            merged.error = self.influence_from_mtuples(merged, intersecting_clusters)
-        else:
-            merged.error = self.influence(merged)
-        return merged
+      merged = Cluster.merge(cluster, neighbor, intersecting_clusters, self.point_volume)
+      if not merged or not merged.volume:
+          return None
+      
+      if self.use_mtuples and cluster.discretes_same(neighbor):
+          intersecting_clusters = filter(cluster.discretes_same, intersecting_clusters)
+          merged.error = self.influence_from_mtuples(merged, intersecting_clusters)
+      else:
+          merged.error = self.influence(merged)
+      return merged
 
     @instrument
     def dim_merge(self, cluster, dim, dec=None, inc=None):
@@ -414,7 +417,7 @@ class Merger(object):
             mergable_clusters = map(Cluster.from_dict, mergable_clusters)
 
             also_mergable = []
-            for cluster in filter(self.is_mergable, clusters):
+            for cluster in clusters:
                 useless = False
                 for mc in mergable_clusters:
                     useless = useless or mc.contains(cluster)
@@ -431,6 +434,7 @@ class Merger(object):
             start = time.time()
             for cluster in chain(mergable_clusters, clusters_set):
               if self.use_mtuples:
+                raise RuntimeError("disabled mtuples for now")
                 cidxs = self.get_intersection(cluster.bbox)
                 intersecting_clusters = [clusters[cidx] for cidx in cidxs]
                 cluster.error = self.influence_from_mtuples(cluster, intersecting_clusters)
@@ -440,7 +444,7 @@ class Merger(object):
             self.stats['load_fixup'][1] += 1
 
             self.cache.close()
-            alt_mergable = filter(self.is_mergable, clusters)
+            alt_mergable = clusters
             if len(alt_mergable) > len(mergable_clusters):
                 _logger.debug("loaded from cache\t%.4f", self.learner.c)
                 mergable_clusters.sort(key=lambda mc: mc.error, reverse=True)
@@ -454,7 +458,6 @@ class Merger(object):
 
 
         clusters_set = set(clusters)
-        mergable_clusters = filter(self.is_mergable, clusters)
         mergable_clusters.sort(key=lambda mc: mc.error, reverse=True)
         return False, clusters_set, mergable_clusters
 
@@ -476,10 +479,12 @@ class Merger(object):
         # adj_graph is used to track adjacent partitions
         _logger.debug("building adj graph")
         self.adj_graph = self.make_adjacency(clusters, self.partitions_complete)
+
+
         # rtree is static (computed once) to find base partitions within 
         # a merged partition
-        _logger.debug("building rtree")
-        self.rtree = self.construct_rtree(clusters)
+        #_logger.debug("building rtree")
+        #self.rtree = self.construct_rtree(clusters)
 
         # load state from cache
         can_stop, clusters_set, mergable_clusters = self.load_from_cache(clusters)

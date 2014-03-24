@@ -378,7 +378,6 @@ class BDTTablesPartitioner(Basic):
 
         if not attr_scores:
           node.states = self.get_states(datas)
-          print "no attrscores"
           return node
 
         attr_scores.sort(key=lambda p: p[-2])

@@ -8,14 +8,14 @@ from datetime import date
 
 
 def get_cols(db, tablename):
-  q = "select attname from pg_class, pg_attribute where relname = %s and attrelid = pg_class.oid;"
+  q = "select attname from pg_class, pg_attribute where relname = %s and attrelid = pg_class.oid and attnum > 0;"
   ret = []
   for (attr,) in db.execute(q, tablename):
     ret.append(attr)
   return ret
 
 
-def fix_typ(db, tablename, col, count, typ):
+def fix_typ(db, tablename, col, count, typ, bfix):
   vals = []
   if 'varchar' in typ:
     t = str
@@ -31,21 +31,27 @@ def fix_typ(db, tablename, col, count, typ):
     t = date
   else:
     vals = []
-    print col, typ
+    print "\t%s\t%s\tno defaults" % (typ, col)
 
   if count == 0: return
 
-  q = "UPDATE %s SET %s = -1 WHERE %s is null " % (tablename, col, col)
-  db.execute(q)
-  try:
-    db.commit()
-  except:
-    pass
-
+  print "fixing %s as %s" % (col, typ)
   for val in vals:
     q = "SELECT count(*) from %s where %s = %%s" % (tablename, col)
     nconflicts = db.execute(q, val).fetchone()[0]
-    print "%s\t%s\t%s" % (nconflicts, val, col)
+    print "\tconflicts: %s\t%s" % (nconflicts, val)
+    
+    if nconflicts is 0 and bfix:
+      print "\tupdating values to %s" % val
+      q = "UPDATE %s SET %s = %%s WHERE %s is null " % (tablename, col, col)
+      db.execute(q, val)
+      try:
+        db.commit()
+      except Exception as e:
+        print "\t%s" % e
+        pass
+      print "\tsuccess"
+      break
 
 
 
@@ -63,8 +69,7 @@ def check_and_fix(db, tablename, col, bfix):
   typ = row[0]
   print "%s\t%s\t%s" % (count, typ, col)
 
-  if bfix:
-    fix_typ(db, tablename, col, count, typ)
+  fix_typ(db, tablename, col, count, typ, bfix)
 
 import sys
 if len(sys.argv) <= 2:

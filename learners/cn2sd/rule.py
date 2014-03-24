@@ -255,10 +255,10 @@ class SDRule(object) :
     def clone(self, data=None):
         if not data:
             ret = self.cloneAndNegate(self.filter.negate)
-            ret.cluster_rules = list(self.cluster_rules)
+            ret.cluster_rules = set(self.cluster_rules)
             return ret
         ret = SDRule(data, self.targetClass, self.filter.conditions[:], self.g, negate=self.filter.negate)
-        ret.cluster_rules = list(self.cluster_rules)
+        ret.cluster_rules = set(self.cluster_rules)
         ret.c_range = list(self.c_range)
         return ret
 
@@ -386,48 +386,71 @@ class SDRule(object) :
 
 
     def simplify(self, data=None, ddists=None, bdists=None):
-        subset = data and self(data) or self.examples
-        data = data or self.data
-        sub_ddists = ddists or Orange.statistics.distribution.Domain(subset)
-        sub_bdists = bdists or Orange.statistics.basic.Domain(subset)
+        #subset = data and self(data) or self.examples
+        data = data or self.examples
+        ret = self.clone()
+
+        positions = [cond.position for cond in self.filter.conditions]
         full_ddists = ddists or Orange.statistics.distribution.Domain(data)
         full_bdists = bdists or Orange.statistics.basic.Domain(data)
-       
-        positions = [cond.position for cond in self.filter.conditions]
+
 
 
         conds = []
         for old_cond, idx in zip(self.filter.conditions, positions):
-            attr = data.domain[idx]
-            sd = sub_ddists[idx]
-            sb = sub_bdists[idx]
-            fd = full_ddists[idx]
-            fb = full_bdists[idx]
+          attr = data.domain[idx]
+          fd = full_ddists[idx]
+          fb = full_bdists[idx]
 
 
-            if attr.var_type == Orange.feature.Type.Discrete:
-                svals = [k for k,v in sd.items() if v]
-                fvals = [k for k,v in fd.items() if v]
-                if set(svals) == set(fvals):
-                    continue
-                cond = orange.ValueFilter_discrete(
-                        position = idx,
-                        values = [orange.Value(attr, val) for val in svals]
-                        )
-            else:
-                if sb.min == fb.min and sb.max == fb.max:
-                    continue
-                conds.append(old_cond)
-                continue
+          if attr.var_type == Orange.feature.Type.Discrete:
+            cvals = set([str(attr.values[int(v)]) for v in old_cond.values])
+            fvals = set([k for k,v in fd.items() if v])
+            #svals = [k for k,v in sd.items() if v]
+            vals = set(cvals).intersection(fvals)
+            if len(vals) == 0: continue
+            cond = orange.ValueFilter_discrete(
+              position = idx,
+              values = [orange.Value(attr, val) for val in vals]
+            )
+          else:
+            if old_cond.min <= fb.min and old_cond.max >= fb.max:
+              continue
+            cond = old_cond
+          conds.append(cond)
+          continue
 
-                cond = Orange.data.filter.ValueFilterContinuous(
-                        position=idx,
-                        oper = orange.ValueFilter.Between,
-                        min=fb.min,
-                        max=fb.max)
+
+          ret.filter.conditions = [old_cond]
+          subset = ret.filter(data)
+          sub_ddists = ddists or Orange.statistics.distribution.Domain(subset)
+          sub_bdists = bdists or Orange.statistics.basic.Domain(subset)
+
+          sd = sub_ddists[idx]
+          sb = sub_bdists[idx]
+
+          if attr.var_type == Orange.feature.Type.Discrete:
+            svals = [k for k,v in sd.items() if v]
+            fvals = [k for k,v in fd.items() if v]
+            if set(svals) == set(fvals): continue
+
+            cond = orange.ValueFilter_discrete(
+                    position = idx,
+                    values = [orange.Value(attr, val) for val in svals]
+                    )
             conds.append(cond)
+          else:
+            if sb.min <= fb.min and sb.max >= fb.max:
+                continue
+            conds.append(old_cond)
+            continue
+
+            cond = Orange.data.filter.ValueFilterContinuous(
+                    position=idx,
+                    oper = orange.ValueFilter.Between,
+                    min=fb.min,
+                    max=fb.max)
         
-        ret = self.clone()
         ret.quality = self.quality
         ret.filter.conditions = conds
         ret.c_range = list(self.c_range)
