@@ -7,7 +7,7 @@ import sys
 import time
 sys.path.extend(['.', '..'])
 
-from itertools import chain, repeat
+from itertools import chain, repeat, ifilter
 from collections import defaultdict
 from rtree.index import Index as RTree
 from rtree.index import Property as RProp
@@ -168,6 +168,9 @@ class Merger(object):
 
 
     def influence_from_mtuples(self, merged, intersecting_clusters):
+        """
+        @deprecated!
+        """
         bad_states, good_states = self.get_states(merged, intersecting_clusters)
 
 
@@ -226,7 +229,7 @@ class Merger(object):
       return merged
 
     @instrument
-    def dim_merge(self, cluster, dim, dec=None, inc=None):
+    def dim_merge(self, cluster, dim, dec=None, inc=None, skip=None):
       bbox = [list(cluster.bbox[0]), list(cluster.bbox[1])]
       merged = cluster.clone()
       if dec is not None:
@@ -234,34 +237,44 @@ class Merger(object):
       if inc is not None:
         bbox[1][dim] = inc
       merged.bbox = (tuple(bbox[0]), tuple(bbox[1]))
+      if skip and hash(merged) in skip: 
+        return None
+      merged.rule = None
+      merged.rule = merged.to_rule(self.learner.full_table)
       merged.error = self.influence(merged)
       merged.parents = [cluster]
       return merged
 
     @instrument
-    def disc_merge(self, cluster, dim, vals):
+    def disc_merge(self, cluster, dim, vals, skip=None):
       merged = cluster.clone()
       vals = set(vals)
       vals.update(merged.discretes.get(dim, ()))
       merged.discretes[dim] = vals
+      if skip and hash(merged) in skip: 
+        return None
+      merged.rule = None
+      merged.rule = merged.to_rule(self.learner.full_table)
       merged.error = self.influence(merged)
       merged.parents = [cluster]
       return merged
 
 
 
-    def expand_candidates(self, cluster, skip=None):
+    def expand_candidates(self, cluster, seen=None):
       """
       Args
-        skip    set of clusters that can be skipped
+        seen    set of clusters that have been already generated and
+                can be skipped
       Yields (dim, dir, g)
             dim: dimention
             dir: direction of expansion ('inc', 'dec', 'disc')
             g: generator of increasing clusters along dim in dir direction
       """
       neighbors = self.adj_graph.neighbors(cluster)
-      check = lambda n: not((skip and n in skip) or (n==cluster) or cluster.same(n, epsilon=0.01) or cluster.contains(n))
+      check = lambda n: not((seen and hash(n) in seen) or (n==cluster) or cluster.same(n, epsilon=0.01) or cluster.contains(n))
       neighbors = filter(check, neighbors)
+      _logger.debug("\t#neighbors\t%d", len(neighbors))
       if not neighbors: return
 
       f = lambda tomerge: self.merge(cluster, tomerge, clusters)
@@ -287,18 +300,32 @@ class Merger(object):
       self.stats['gather'][0] += cost
       self.stats['gather'][1] += 1
 
+
+      if True or self.DEBUG:
+        for dim in xrange(len(cluster.cols)):
+          colname = cluster.cols[dim][:10]
+          _logger.debug("\t%s\t#neighs\tinc\t%d", colname, len(dim_to_incs[dim]))
+          _logger.debug("\t%s\t#neighs\tdec\t%d", colname, len(dim_to_decs[dim]))
+
+        for dim, discs in dim_to_discs.iteritems():
+          dim = dim[:10]
+          _logger.debug("\t%s\t#neighs\t   \t%d", dim, len(discs))
+
       for dim in xrange(len(cluster.cols)):
-        generator = (self.dim_merge(cluster, dim, None, inc) 
+        generator = (self.dim_merge(cluster, dim, None, inc, seen) 
             for inc in sorted(dim_to_incs[dim]))
+        generator = ifilter(bool, generator)
         yield (dim, 'inc', generator)
 
-        generator = (self.dim_merge(cluster, dim, dec, None)
+        generator = (self.dim_merge(cluster, dim, dec, None, seen)
             for dec in sorted(dim_to_decs[dim], reverse=True))
+        generator = ifilter(bool, generator)
         yield (dim, 'dec', generator)
 
       for dim, discs in dim_to_discs.iteritems():
-        generator = (self.disc_merge(cluster, dim, disc)
+        generator = (self.disc_merge(cluster, dim, disc)#, seen)
             for disc in sorted(discs, key=lambda d: len(d)))
+        generator = ifilter(bool, generator)
         yield (dim, 'disc', generator)
 
     def create_filterer(self, cluster, reasons=None):
@@ -511,14 +538,14 @@ class Merger(object):
                 cluster in new_clusters or cluster in seen):
                 continue
 
-            skip = False
+            canskip = False
             for test in chain(new_clusters, mergable_clusters):
               if test == cluster: continue
               if test.contains(cluster, .01):
                 #_logger.debug("skipped\n\t%s\n\t%s", str(cluster), str(test))
-                skip = True
+                canskip = True
                 break
-            if skip:
+            if canskip:
               _logger.debug("skipped\n\t%s\n\t%s", str(cluster), str(test))
               continue
 

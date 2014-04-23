@@ -348,7 +348,12 @@ var get_aggdata = (function(){
 
 			if (!_loading[idx]) {
 				_loading[idx] = true;
-				var params = {'query' : query, 'filter' : where, 'db' : global_state.db}
+				var params = {
+          'query' : query, 
+          'filter' : where, 
+          'db' : global_state.db
+        };
+        params.query = $("#query").text();
 				$.post('/json/query/', params, function(resp) {
           resp.data = gg.data.fromArray(resp.data);
 					resp.data = fix_date_objects(resp.data)//;, resp.labels);
@@ -581,7 +586,7 @@ var onScorpionSubmit = function() {
   
   global_state.attrs = [];
   $(".errattrs").get().forEach(function(d) {
-    if(true || $(d).attr("checked")) {
+    if (d.checked) {
       global_state.attrs.push($(d).val());
     }
   })

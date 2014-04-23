@@ -268,7 +268,7 @@ class DecisionTopDown(TopDown):
             row.append('0')
             rows.append(row)
         table = Orange.data.Table(domain, rows)
-        rules = clusters_to_rules(filter_top_clusters(self.final_clusters), self.cols, table)
+        rules = clusters_to_rules(filter_top_clusters(self.final_clusters), table)
 
         total = 0
         for rule in rules:

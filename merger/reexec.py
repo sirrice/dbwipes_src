@@ -91,7 +91,7 @@ class ReexecMerger(Merger):
         newcluster = Cluster.merge(c1, c2, intersecting, self.point_volume)
         if not newcluster:
             pdb.set_trace()
-        rule = newcluster.to_rule(self.full_table, self.cols, cont_dists=self.cont_dists, disc_dists=self.disc_dists)
+        rule = newcluster.to_rule(self.full_table, cont_dists=self.cont_dists, disc_dists=self.disc_dists)
         
         if len(rule.examples) == 0:
             return None

@@ -3,14 +3,17 @@
 <script type="text/javascript">
 var canned_queries = {
   intel : {
-//    query: "SELECT avg(temp), stddev(temp), date_trunc('hour',date+time) as dt\n FROM readings\n WHERE date > '2004-3-1' and date < '2004-3-15'\n GROUP BY dt\n ORDER BY dt ASC",
-    query: "SELECT avg(temp), stddev(temp), hour\n FROM readings\n GROUP BY hour",
+//    query: "SELECT avg(temp), stddev_pop(temp), date_trunc('hour',date+time) as dt\n FROM readings\n WHERE date > '2004-3-1' and date < '2004-3-15'\n GROUP BY dt\n ORDER BY dt ASC",
+    query: "SELECT avg(temp), stddev_pop(temp), hr\n FROM readings\n GROUP BY hr",
     db: "intel"
 	},
 	fec12 : {
     query: "SELECT sum(disb_amt), disb_dt as day FROM expenses_extradata WHERE (cand_id) = 'P80003338' GROUP BY day",
     db: "fec12"
-  },
+          } 
+};
+/*
+
   senate: {
     query: "SELECT sum(dis_amo), can_nam as can_nam FROM senate WHERE (dis_dat) > '2000-01-01' GROUP BY can_nam ORDER BY sum(dis_amo) DESC",
     db: "fec12"
@@ -29,6 +32,7 @@ var canned_queries = {
   }
            
 };
+*/
 </script>
 
 

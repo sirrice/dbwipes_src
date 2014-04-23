@@ -138,14 +138,17 @@ class Cluster(object):
         return volume(self.bbox)
     volume = property(__volume__)
 
-    def clone(self):
-        c = Cluster(self.bbox, self.error, self.cols,
-                       parents=self.parents, discretes=self.discretes, 
-                       **self.kwargs)
+    def clone(self, copy_rule=False):
+        c = Cluster(
+          self.bbox, self.error, self.cols,
+          parents=self.parents, discretes=self.discretes, 
+          **self.kwargs
+        )
         c.inf_func = self.inf_func
-        c.inf_state = self.inf_state
+        c.inf_state = list(self.inf_state)
         c.c_range = list(self.c_range)
-        c.rule = self.rule
+        if copy_rule:
+          c.rule = self.rule
         return c
 
     def max_ancestor_error(self):
@@ -391,7 +394,7 @@ class Cluster(object):
 
 
 
-    def to_rule(self, table, cols, cont_dists=None, disc_dists=None):
+    def to_rule(self, table, cont_dists=None, disc_dists=None):
       """
       @param cols list of attribute names
       """
@@ -470,6 +473,7 @@ class Cluster(object):
     
     def __str__(self):
         cr = "%.4f\t%.4f" % tuple(self.c_range)
+        return '%.4f\t%s\t%s' % (self.error, cr, str(self.rule))
         s = '\t'.join(['%s:(%.4f, %.4f)' % (col, bound[0], bound[1]) 
                    for col, bound in zip(self.cols, zip(*self.bbox))])
         d = '\t'.join(["%s:%s (%d els)" % (k, str(list(v)[:3]), len(v)) 
@@ -485,7 +489,13 @@ class Cluster(object):
           if self.inf_state:
             state = tuple(map(tuple, self.inf_state))
 
-          self.hash = hash((tuple(self.c_range), state, self.bbox, str(sorted(self.discretes.items()))))
+          #self.hash = hash((tuple(self.c_range), state, self.bbox, str(sorted(self.discretes.items()))))
+          discretes = []
+          for dkey in sorted(self.discretes.keys()):
+            discretes.append(dkey)
+            discretes.append(":::")
+            discretes.extend(map(hash, sorted(self.discretes[dkey]))) 
+          self.hash = hash((state, self.bbox, str(discretes)))
         return self.hash
 
     @property
@@ -551,7 +561,7 @@ def normalize_cluster_errors(clusters):
     return clusters
 
 
-def clusters_to_rules(clusters, cols, table):
+def clusters_to_rules(clusters, table):
     import Orange
     attrnames = [attr.name for attr in table.domain]
     cont_dists = dict(zip(attrnames, Orange.statistics.basic.Domain(table)))
@@ -559,6 +569,6 @@ def clusters_to_rules(clusters, cols, table):
     args = {'cont_dists' : cont_dists,
             'disc_dists' : disc_dists}
 
-    rules = [c.to_rule(table, cols, **args) for c in clusters]
+    rules = [c.to_rule(table, **args) for c in clusters]
 
     return rules

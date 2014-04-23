@@ -133,7 +133,7 @@ def get_rules(full_table, bad_tables, good_tables, **kwargs):
     thresh = compute_clusters_threshold(clusters)
     for c in clusters:
         c.isbest = (c.error >= thresh)
-    merged = sorted(clusters_to_rules(clusters, cols, full_table), key=lambda c: c.quality, reverse=True)
+    merged = sorted(clusters_to_rules(clusters, full_table), key=lambda c: c.quality, reverse=True)
     #merged = [r.simplify() for r in merged]
 
     cost = cost - costs.get('merge_load_from_cache',(0,))[0] - costs.get('merge_cache_results', (0,))[0]

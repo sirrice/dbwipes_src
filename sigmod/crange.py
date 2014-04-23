@@ -74,7 +74,7 @@ class Frontier(object):
     """
     ret = set()
     for cur, start, end in frontier:
-      c = cur.clone()
+      c = cur.clone(copy_rule=True)
       c.c_range = r_intersect([start, end], cur.c_range)
       ret.add(c)
 
@@ -164,7 +164,6 @@ class Frontier(object):
       cost = time.time() - start
       self.stats['root_scan'][0] += cost
       self.stats['root_scan'][1] += 1
-      _logger.debug("get_frontier.allintersect %.4f", (time.time() - start))
 
       if not roots: break
 

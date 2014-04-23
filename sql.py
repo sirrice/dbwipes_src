@@ -75,10 +75,12 @@ class Query(object):
         if isinstance(val, basestring):
             return quote_sql_str(val)
         if isinstance(val, datetime):
+            return quote_sql_str(str(val))
             if val.hour == 0 and val.minute == 0 and val.second == 0:
                 return '%s::date' % quote_sql_str(str(val))
             return '%s::timestamp' % quote_sql_str(str(val))
         if isinstance(val, date):
+            return quote_sql_str(str(val))
             return '%s::date' % quote_sql_str(str(val))
         return str(val)
 
@@ -129,6 +131,9 @@ class SelectAgg(object):
         self.attr = attr # actual attribute token from sqlparse
         self.fname = attr[0]
         self.isagg = True
+
+        #if not self.alias:
+        #self.alias = str(self.fname)
 
     shortname = property(lambda self: self.alias or self.fname or self.expr)
     func = property(lambda self: self._func.clone())

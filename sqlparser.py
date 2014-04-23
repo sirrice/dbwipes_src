@@ -17,6 +17,8 @@ classes = "%s/jars/scala-library.jar:%s/jars/sqlparser.jar" % (dirname, dirname)
 __agg2f__ = {'avg' : AvgErrFunc,
              'std' : StdErrFunc,
              'stddev' : StdErrFunc, 
+             'stddev_samp': StdErrFunc,
+             'stddev_pop': StdErrFunc,
              'min' : MinErrFunc,
              'max' : MaxErrFunc,
              'sum' : SumErrFunc,

@@ -85,7 +85,7 @@ class RangeMerger(Merger):
       c.inf_range = [c.inf_func(c.c_range[0]), c.inf_func(c.c_range[1])]
 
   def print_clusters(self, clusters):
-    rules = clusters_to_rules(clusters, self.learner.cols, self.learner.full_table)
+    rules = clusters_to_rules(clusters, self.learner.full_table)
     rules = ['%.4f-%.4f %s' % (r.c_range[0], r.c_range[1], r) for r in rules]
     print '\n'.join(rules)
 
@@ -107,8 +107,8 @@ class RangeMerger(Merger):
       self.fig = fig = plt.figure(figsize=(4, 6))
       self.ax = ax = fig.add_subplot(111)
       self.xs = xs = frange(self.c_range)
-      miny = min([min(c.inf_func(xs[0]), c.inf_func(xs[1])) for c in clusters])
-      maxy = max([max(c.inf_func(xs[0]), c.inf_func(xs[1])) for c in clusters])
+      self.miny = miny = min([min(c.inf_func(xs[0]), c.inf_func(xs[1])) for c in clusters])
+      self.maxy = maxy = max([max(c.inf_func(xs[0]), c.inf_func(xs[1])) for c in clusters])
       self.yrange = [miny, maxy]
       reset_ax(ax, self.c_range, (miny, maxy))
       render_fulls(ax, clusters, xs, 'grey', .2)
@@ -127,8 +127,10 @@ class RangeMerger(Merger):
       print self.get_frontier.stats.items()
       print self.get_frontier.heap.stats.items()
 
+
     start = time.time()
     iteridx = 1
+    seen = set()
     while len(frontier) > 0:#self.min_clusters:
       iteridx += 1
 
@@ -138,7 +140,7 @@ class RangeMerger(Merger):
         print "frontier"
         self.print_clusters(frontier)
 
-      new_clusters, removed_clusters = self.expand_frontier(frontier)
+      new_clusters, removed_clusters = self.expand_frontier(frontier, seen)
 
       if self.DEBUG:
         print "new clusters"
@@ -167,57 +169,66 @@ class RangeMerger(Merger):
 
 
   @instrument
-  def expand_frontier(self, frontier):
+  def expand_frontier(self, frontier, seen):
     """
     Return (newclusters, rmclusters)
     """
 
-    newclusters = set()
+    newclusters = set(frontier)
     for cluster in frontier:
-      merges, rms = self.expand(cluster)
-      for c in rms: c.c_range = list(self.c_range)
-      newclusters.update(rms)
+      merges = self.expand(cluster, seen)
+      #for c in rms: c.c_range = list(self.c_range)
+      #newclusters.update(rms)
       newclusters.update(merges)
+
+    for cluster in newclusters:
+      cluster.c_range = list(self.c_range)
 
     return self.get_frontier(newclusters)
 
  
 
   @instrument
-  def dim_merge(self, cluster, dim, dec=None, inc=None):
-    merged = Merger.dim_merge(self, cluster, dim, dec, inc)
-    merged.c_range = list(self.c_range)
-    merged.inf_func = merged.create_inf_func(self.learner.l)
+  def dim_merge(self, cluster, dim, dec=None, inc=None, skip=None):
+    merged = Merger.dim_merge(self, cluster, dim, dec, inc, skip)
+    if merged:
+      merged.c_range = list(self.c_range)
+      merged.inf_func = merged.create_inf_func(self.learner.l)
     return merged
 
 
   @instrument
-  def disc_merge(self, cluster, dim, vals):
-    merged = Merger.disc_merge(self, cluster, dim, vals)
-    merged.c_range = list(self.c_range)
-    merged.inf_func = merged.create_inf_func(self.learner.l)
+  def disc_merge(self, cluster, dim, vals, skip=None):
+    merged = Merger.disc_merge(self, cluster, dim, vals, skip)
+    if merged:
+      merged.c_range = list(self.c_range)
+      merged.inf_func = merged.create_inf_func(self.learner.l)
     return merged
 
   @instrument
-  def greedy_expansion(self, cur, expansions):
+  def greedy_expansion(self, cur, seen):
+    expansions = self.expand_candidates(cur, seen)
+
     dim_to_bests = defaultdict(set)
     for dim, direction, g in expansions:
-      dim_bests = self.expand_dim(cur, dim, direction, g)
-      if cur in dim_bests: dim_bests.remove(cur)
+      dim_bests = self.expand_dim(cur, dim, direction, g, seen)
+      #if cur in dim_bests: dim_bests.remove(cur)
       dim_to_bests[(dim, direction)] = dim_bests
 
     return dim_to_bests
   
   @instrument
-  def expand_dim(self, cur, dim, direction, g):
+  def expand_dim(self, cur, dim, direction, g, seen):
     if True or direction == 'disc':
       cands = []
-      bests = [cur]
+      bests = set([cur])
       for cand in g:
         cands.append(cand)
-        bests, _ = self.get_frontier(bests)
+        bests, _ = self.get_frontier(bests.union(set([cand])))
         if cand not in bests:
+          seen.add(hash(cand))
           break
+      bests = [cur] + cands
     else:
       cands = list(g)
       if len(cands) == 0:
@@ -225,21 +236,8 @@ class RangeMerger(Merger):
       cands.append(cur)
       frontier = self.get_frontier.get_frontier(cands)
       bests = self.get_frontier.frontier_to_clusters(frontier)
-    bests = list(bests)
-      
 
-
-    #for cand in cands:
-    #  dim_bests.append(cand)
-    #  frontier = self.get_frontier.get_frontier(dim_bests)
-    #  dim_bests = list(self.get_frontier.frontier_to_clusters(frontier))
-    #  bimproves = cand in zip(*frontier)[0]
-    #  _logger.debug(cand)
-    #  
-    #  # not among the frontier, give up
-    #  if not bimproves:
-    #    break
-
+     
     if direction == 'disc':
       name = dim[:10]
       s = ','.join([str(len(c.discretes[dim])) for c in bests])
@@ -247,31 +245,23 @@ class RangeMerger(Merger):
       name = cur.cols[dim][:10]
       if bests:
         if direction == 'inc':
-          s = ','.join(map(str, [c.bbox[1][dim] for c in bests]))
+          s = ','.join(["%.4f" % c.bbox[1][dim] for c in bests])
           s = '%.4f - %s' % (bests[0].bbox[0][dim], s)
         else:
-          s = ','.join(map(str, [c.bbox[0][dim] for c in bests]))
+          s = ','.join(["%.4f" % c.bbox[0][dim] for c in bests])
           s = '%s - %.4f' % (s, bests[0].bbox[1][dim])
       else:
         s = '---'
+    _logger.debug("\t%s\t%s\t%d candidates", name, direction, len(cands))
     _logger.debug("\t%s\t%s\t%s", name, direction, s)
 
-
-    if False and self.DEBUG:
-      reset_ax(self.ax, self.c_range, self.yrange)
-      render_fulls(self.ax, cands, self.xs, alpha=.2)
-      render_segs(self.ax, bests, 'red', .4)
-      self.ax.set_title(('%s\n%s  %s  %s' % (str(cur)[:50], name, direction, s)).replace('\t', '  '))
-      self.ax.title.set_fontsize(6)
-      self.fig.savefig('/Users/sirrice/expand-%02d.pdf' % self.i)
-      self.i += 1
 
     return bests
 
 
 
   @instrument
-  def expand(self, c):
+  def expand(self, c, seen):
     """
     Returns a frontier of clusters expanded from c that
     are possible optimals in _some_ c range
@@ -279,30 +269,39 @@ class RangeMerger(Merger):
     XXX: optimization could be a minimum c range a cluster must be
           a candidate over
     """
-    _logger.debug("expand\t%s", str(c)[:100])
+    _logger.debug("expand\t%s", str(c.rule)[:100])
     start = time.time()
     cur_bests = set([c])
     ret = set()
-    seen = set()
     rms = set()
+    all_merges = set()
     while cur_bests:
-      if (time.time() - start) > 30:
+      if not self.DEBUG and (time.time() - start) > 30:
+        ret.update(cur_bests)
         break
 
       cur = cur_bests.pop()
-      if cur in seen: 
-        _logger.debug("seen \t%s", cur.id)
+      if hash(cur) in seen: 
+        _logger.debug("seen \t%s", str(cur.rule)[:100])
         continue
-      seen.add(cur)
+      seen.add(hash(cur))
+      _logger.debug("expand\tsub\t%s", str(cur.rule)[:100])
 
-      expansions = self.expand_candidates(cur, seen)
-      dim_to_bests = self.greedy_expansion(cur, expansions)
 
-      allmerges = set()
-      map(allmerges.update, dim_to_bests.values())
-      merges = set(filter(lambda c: r_vol(c.c_range), allmerges))
+      dim_to_bests = self.greedy_expansion(cur, seen)#.union(all_merges))
+
+      merges = list()
+      map(merges.extend, dim_to_bests.values())
+      all_merges.update(map(hash, merges))
+      #if 'attend' in str(cur):pdb.set_trace()
+      merges = set(filter(lambda c: r_vol(c.c_range), merges))
+      if cur in merges:
+        _logger.debug("cur added to bests")
+        ret.add(cur)
+        merges.remove(cur)
 
       if len(merges) is 0:
+        _logger.debug("# better expanded = 0")
         ret.add(cur)
         continue
 
@@ -311,6 +310,7 @@ class RangeMerger(Merger):
       frontier, losers = self.get_frontier(combined)
 
       if cur_bests.issuperset(frontier):
+        _logger.debug("frontier subset of curbests")
         ret.add(cur)
         continue
       
@@ -322,6 +322,19 @@ class RangeMerger(Merger):
       cur_bests = frontier
       cur_bests.difference_update([cur])
 
+
+    if self.DEBUG:
+      reset_ax(self.ax, self.c_range, self.yrange)
+      render_fulls(self.ax, ret, self.xs, alpha=.2)
+      render_segs(self.ax, [c], 'red', .4)
+      self.ax.set_title(str(c.rule)[:50])
+      self.ax.title.set_fontsize(6)
+      self.fig.savefig('/Users/sirrice/expand-%02d.pdf' % self.i)
+      self.i += 1
+
+
+
+    return ret
     ret, more_rms = self.get_frontier(ret)
     rms.update(more_rms)
     return ret, rms

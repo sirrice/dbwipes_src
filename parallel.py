@@ -123,11 +123,11 @@ def serial_hybrid(obj, aggerr, **kwargs):
           'aggerr':aggerr,
           'cols':cols,
           'c': obj.c,
-          'c_range': [0.01, 2],
+          'c_range': [0.05, 1],
           'l' : 0.6,
           'msethreshold': 0.01,
           'max_wait':5,
-          'DEBUG': True
+          'DEBUG': False
         }
         # msethreshold=0.01,
         # k=10,
@@ -140,7 +140,7 @@ def serial_hybrid(obj, aggerr, **kwargs):
         if aggerr.agg.func.__class__ in (errfunc.SumErrFunc, errfunc.CountErrFunc):
           klass = MR 
           params.update({
-            'use_cache': True,
+            'use_cache': False,
             'use_mtuples': False,
             'granularity': 100
             })
@@ -165,7 +165,7 @@ def serial_hybrid(obj, aggerr, **kwargs):
         start = time.time()
         hybrid = klass(**params)
         clusters = hybrid(all_full_table, bad_tables, good_tables)
-        rules = clusters_to_rules(clusters, cols, full_table)
+        rules = clusters_to_rules(clusters, full_table)
         print "nclusters: %d" % len(clusters)
         costs['rules_get'] = time.time() - start
 
@@ -226,7 +226,7 @@ def parallel_hybrid(obj, aggerr, **kwargs):
         hybrid = klass(**params)
         clusters = hybrid(full_table, bad_tables, good_tables)
         normalize_cluster_errors(clusters)
-        rules = clusters_to_rules(clusters, cols, full_table)
+        rules = clusters_to_rules(clusters, full_table)
         cost = time.time() - start
         ncalls = 0
         

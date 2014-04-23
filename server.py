@@ -5,6 +5,7 @@ import json
 import md5
 import traceback
 from datetime import datetime
+from monetdb import sql as msql
 
 from db import *
 from arch import *
@@ -18,26 +19,48 @@ app = Flask(__name__)
 
 @app.before_request
 def before_request():
-    dbname = request.form.get('db', 'intel')
-    g.db = connect(dbname)
-    g.dbname = dbname
-    g.tstamp = md5.md5(str(hash(datetime.now()))).hexdigest()
-        
+  dbname = request.form.get('db', 'intel')
+  g.dbname = dbname
+  g.tstamp = md5.md5(str(hash(datetime.now()))).hexdigest()
+  g.db = connect(dbname, engine='pg')
+  try:
+    #g.monetdb = msql.connect(user='monetdb', password='monetdb', hostname='localhost', database=dbname)
+    g.monetdb = connect(dbname, engine='monet')
+  except:
+    g.monetdb = None
+      
 
 @app.teardown_request
 def teardown_request(exception):
-    try:
-        g.db.close()
-    except:
-        pass
-
-
-def run_sql_query(sql):
-  ret = []
-  res = g.db.execute(sql)
   try:
+    g.db.close()
+  except:
+      pass
+
+  try:
+    g.monetdb.close()
+  except:
+    pass
+
+def run_sql_query(sql, parsed):
+  ret = []
+  sql = str(parsed)
+  if g.monetdb:
+    try:
+      res = g.db.execute("%s limit 0" % sql)
+      keys = res.keys()
+      res = g.monetdb.cursor()
+      res.execute(sql)
+      #keys = zip(*res.description)[0]
+    except:
+      res = g.db.execute(sql)
+      keys = res.keys()
+  else:
+    res = g.db.execute(sql)
     keys = res.keys()
-    for row in res:
+
+  try:
+    for row in res.fetchall():
       ret.append(dict(zip(keys, row)))
   finally:
     res.close()
@@ -117,23 +140,23 @@ def json_handler(obj):
         
 @app.route('/debug/', methods=["GET"])
 @app.route('/', methods=["POST", "GET"])
-def intel_query():
+def index():
     context = dict(request.form.items())
     try:
         sql = request.form.get('query', '')
         delids = json.loads(request.form.get('bad_tuple_ids', '{}')) # ids to delete
-        print delids
         where = request.form.get('filter', '') 
 
         if not sql:
-            sql = """ SELECT avg(temp), stddev(temp), hour
+            sql = """ SELECT avg(temp), stddev_samp(temp), hr
             FROM readings
-            GROUP BY hour; """
+            GROUP BY hr; """
             #WHERE date > '2004-3-1' and date < '2004-3-15'
 
         obj = get_query_sharedobj(sql, delids)
         if where.strip():
             obj.parsed.where.append(where)
+        print str(obj.parsed)
         data_and_labels = run_query(obj)
 
         context['query'] = obj.parsed.prettify()
@@ -151,50 +174,36 @@ def intel_query():
     
 @app.route('/json/schema/', methods=["POST", "GET"])
 def json_schemas():
-    data = defaultdict(list)
-    try:
-        tquery = "select tablename from pg_tables where schemaname = 'public'"
-        squery = '''select column_name, data_type
-        from information_schema.columns
-        where table_name = %s;'''
-        
-        for table, in query(g.db, tquery):
-            data[table] = map(tuple, query(g.db, squery, (table,)))
-    except:
-        traceback.print_exc()
-    return json.dumps(data, default=json_handler)
+  data = defaultdict(list)
+  try:
+    tquery = "select tablename from pg_tables where schemaname = 'public'"
+    squery = '''select column_name, data_type
+    from information_schema.columns
+    where table_name = %s;'''
     
+    for table, in query(g.db, tquery):
+      data[table] = map(tuple, query(g.db, squery, (table,)))
+  except:
+    traceback.print_exc()
+  return json.dumps(data, default=json_handler)
+  
 
 
 @app.route('/json/query/', methods=["POST", "GET"])
 def json_query():
-    data_and_labels = {'data' : {}, 'labels' : {}}
-    try:
-        sql = request.form['query']
-        data = run_sql_query(sql)
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-    return json.dumps({'data':data}, default=json_handler)
-
-#
-#
-
-
-
-#        if where.strip():
-#            obj.parsed.where.append(where)
-#        print "/json/query.Final", str(obj.parsed)
-#        data_and_labels = run_query(obj)
-#
-#        print data_and_labels['data'][:5]
-#        
-#        
-#    except Exception as e:
-#        import traceback
-#        traceback.print_exc()
-#    return json.dumps(data_and_labels, default=json_handler)
-
+  data_and_labels = {'data' : {}, 'labels' : {}}
+  try:
+    sql = request.form['query']
+    where = request.form.get('filter', None)
+    parsed = parse_sql(g.db, sql)
+    if where:
+      parsed.where.append(where)
+    print str(parsed)[:200]
+    data = run_sql_query(sql, parsed)
+  except Exception as e:
+    import traceback
+    traceback.print_exc()
+  return json.dumps({'data':data}, default=json_handler)
 
 @app.route('/json/filterq/', methods=["POST", "GET"])
 def json_filterq():
@@ -248,50 +257,53 @@ def run_base_tuple_query(obj, keys):
 def debug():
     context = dict(request.form.items())
     try:    
-        if request.method == 'POST':
-            obj = parse_debug_args(g.db, request.form, dbname=g.dbname)
-            qobj = obj.parsed
-            data_and_labels = run_query(obj)
-            data, labels = data_and_labels['data'], data_and_labels['labels']
+      if request.method == 'POST':
+        obj = parse_debug_args(g.db, request.form, dbname=g.dbname)
+        qobj = obj.parsed
+        data_and_labels = run_query(obj)
+        data, labels = data_and_labels['data'], data_and_labels['labels']
 
-            maxkeys = 0
-            for aggerr in obj.errors:
-                print aggerr.agg.shortname, '\t', aggerr.keys
-                maxkeys = max(maxkeys, len(aggerr.keys))
-
-
-
-            start = time.time()
-            parallel_debug(
-              obj,
-              nprocesses=min(maxkeys, 4),
-              parallelize=True,
-              nstds=0,
-              errperc=0.001,
-              epsilon=0.008,
-              msethreshold=0.15,
-              c=obj.c,
-              complexity_multiplier=4.5,
-              l=0.9,
-              max_wait=10,
-            )
-            cost = time.time() - start
-            print "end to end took %.4f" % cost
+        maxkeys = 0
+        for aggerr in obj.errors:
+          print aggerr.agg.shortname, '\t', aggerr.keys
+          maxkeys = max(maxkeys, len(aggerr.keys))
 
 
 
-            context.update( {'query': obj.prettify_sql,
-                             'errtype' : str(obj.errors[0].errtype),
-                             'erreq' : 'erreq',
-                             'data' : json.dumps(data, default=json_handler),
-                             'labels' : json.dumps(labels)})
-            context['result_schema'] = [ (attr, t.__name__, attr not in obj.ignore_attrs)
-                                         for attr, t in obj.schema.items() ]
+        start = time.time()
+        parallel_debug(
+          obj,
+          nprocesses=min(maxkeys, 4),
+          parallelize=True,
+          nstds=0,
+          errperc=0.001,
+          epsilon=0.008,
+          msethreshold=0.15,
+          c=obj.c,
+          complexity_multiplier=4.5,
+          l=0.9,
+          max_wait=10,
+        )
+        cost = time.time() - start
+        print "end to end took %.4f" % cost
 
 
-            # recompute aggregate query with classifier suggested predicates
-            filter_opts = create_filter_options(obj)
-            context['filter_opts'] = filter_opts.items()
+
+        context.update( {
+          'query': obj.prettify_sql,
+          'errtype' : str(obj.errors[0].errtype),
+          'erreq' : 'erreq',
+          'data' : json.dumps(data, default=json_handler),
+          'labels' : json.dumps(labels)
+        })
+        context['result_schema'] = [ 
+            (attr, t.__name__, attr not in obj.ignore_attrs)
+            for attr, t in obj.schema.items() 
+        ]
+
+        # recompute aggregate query with classifier suggested predicates
+        filter_opts = create_filter_options(obj)
+        context['filter_opts'] = filter_opts.items()
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -304,13 +316,17 @@ def create_filter_options(obj):
   nrules = 6 
   for label, clauses in obj.clauses.items():
     rules = [p[0] for p in obj.rules[label]]
-    clauses = filter(lambda e:e.strip(), rm_dups(clauses, hash))
+    clauses = [c.strip() for c in clauses]
+    #clauses = filter(lambda e:e.strip(), rm_dups(clauses, hash))
     for rule, clause in zip(rules[:nrules], clauses[:nrules]):
       # print "\t", clause
 
       tmpq = obj.parsed.clone()
-      cwhere = 'not (%s)' % clause 
-      tmpq.where.append(cwhere)
+      if clause:
+        cwhere = 'not (%s)' % clause 
+        tmpq.where.append(cwhere)
+      else:
+        cwhere = ''
       clause_parts = rule.toCondStrs()
       print rule
       print clause_parts

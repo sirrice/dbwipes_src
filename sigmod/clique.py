@@ -233,13 +233,11 @@ class MR(Basic):
       self.final_clusters = self.merger(clusters)
       self.all_clusters = clusters
       self.cost_merge = time.time() - start
-        
 
       self.costs = {
               'cost_clique' : self.cost_clique,
               'cost_merge' : self.cost_merge
       }
-
 
       return self.final_clusters
 

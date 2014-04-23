@@ -51,12 +51,18 @@ submit
           </div>
 				</div>			
 
-       <div style="display: none;">
-        {% for attrname, type, checked in result_schema %}
-          <label class="checkbox">
-            <input type="checkbox" checked class="errattrs" id="errattrs_{{attrname}}" value="{{attrname}}"/>
+        <div class="form-group" id="walkthrough-schema" >
+          <label class="col-sm-3 control-label">
+            <span class='link' onclick="$('#sb_schema').toggle()">attrs</span>
           </label>
-        {% endfor %}
+          <div id="sb_schema" class="col-sm-9" style="display: none;">
+            {% for attrname, type, checked in result_schema %}
+              <label class="checkbox">
+                <input type="checkbox" checked class="errattrs" id="errattrs_{{attrname}}" value="{{attrname}}"/>
+                {{attrname}}
+              </label>
+            {% endfor %}
+          </div>
         </div>
 
         <div class="controls" style="display: none">

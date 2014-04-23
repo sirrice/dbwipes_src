@@ -130,7 +130,7 @@ class Basic(object):
     if not table:
       table = self.dummy_table
     rule = cluster.to_rule(
-        table, self.cols, cont_dists=self.cont_dists, disc_dists=self.disc_dists
+        table, cont_dists=self.cont_dists, disc_dists=self.disc_dists
     )
     return rule
 
@@ -199,9 +199,12 @@ class Basic(object):
     datas = rule and map(rule.filter_table, tables) or tables
     infs = []
     lens = []
-    for ef, data in zip(err_funcs, datas):
-      arr = data.to_numpyMA('ac')[0]
-      influence = ef(arr.data)
+    for idx, (ef, data) in enumerate(zip(err_funcs, datas)):
+      if len(data) == len(tables[idx]):
+        influence = -float('infinity')
+      else:
+        arr = data.to_numpyMA('ac')[0]
+        influence = ef(arr.data)
       infs.append(influence)
       lens.append(len(data))
     return infs, lens

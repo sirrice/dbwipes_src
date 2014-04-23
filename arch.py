@@ -181,6 +181,7 @@ def parse_debug_args(db, form, dbname=None):
     obj.c = c
 
     ignore_attrs = set(obj.attrnames).difference(attrs)
+    ignore_attrs.add('finan_icu_days')
     obj.ignore_attrs = ignore_attrs
     qobj = obj.parsed    
 
@@ -245,6 +246,8 @@ class SharedObj(object):
         if not db and not dbname:
             raise "SharedObj requires a database connection!"
         self.db = db or connect(dbname)
+        dbname = dbname or str(self.db.url).split("/")[-1]
+        self.monetdb = connect(dbname, engine='monet')
         self.dbname = dbname
         self.parsed = parse_sql(db, sql)
         if len(self.parsed.fr) > 1:
@@ -295,7 +298,7 @@ class SharedObj(object):
         qobj = self.parsed.clone()
         if where:
             qobj.where.append(where)
-        return query(self.db, str(qobj), params)
+        return query(self.monetdb, str(qobj), params)
 
     def get_agg_dicts(self, *args, **kwargs):
         selects = map(lambda s: s.shortname, self.parsed.select)
@@ -355,6 +358,7 @@ class SharedObj(object):
         q = '''select column_name, data_type
                from information_schema.columns
                where table_name = %s;'''
+        #q = """select c.name, c.type from sys.columns as c, sys.tables as t where table_id = t.id and t.name = %s;"""
         # and data_type != 'date' and position('time' in data_type) =
         # 0 and column_name != 'humidity'
         for row in query(db, q, (table,)):
@@ -417,11 +421,16 @@ def create_clauses(sharedobj):
 
     for label, rules in sharedobj.rules.iteritems():
       rules = map(lambda p: p[0], rules)
-      clauses = map(lambda rule:
-                    ' or '.join(rule_to_clauses(rule)),
-                    rules)
+      sharedobj.clauses[label] = []
+      for rule in rules:
+        clauses = rule_to_clauses(rule)
+        clause_str = ' or '.join(clauses)
+        sharedobj.clauses[label].append(clause_str)
+      #clauses = map(lambda rule:
+                    #' or '.join(rule_to_clauses(rule)),
+                    #rules)
       
-      sharedobj.clauses[label] = clauses
+      #sharedobj.clauses[label] = clauses
 
 
 
@@ -430,7 +439,7 @@ def is_discrete(attr, col):
     if attr in [
         'epochid', 'voltage', 'xloc', 'yloc', 
         'est', 'height', 'width', 'atime', 'v', 'light', 'humidity',
-        'age']:
+        'age', 'finan_icu_days']:
         return False
     if attr in ['recipient_zip', 'sensor', 'moteid' 'file_num']:
         return True
@@ -513,7 +522,7 @@ def orange_schema_funcs(cols, attrs):
       feature = Orange.feature.Continuous(attr)
       func = lambda v: v is not None and float(v) or 0.
 
-    print "\tschema func for %s\t%.4f" % (attr, time.time() - start)
+    print "\tschema func for %s\t%s\t%.4f" % (attr, func, time.time() - start)
 
     features.append(feature)
     funcs.append(func)
@@ -583,48 +592,48 @@ def merge_tables(tables):
 
 def rule_to_clauses(rule):
     try:
-        return sdrule_to_clauses(rule)
+      return sdrule_to_clauses(rule)
     except:
+      try:
+        return c45_to_clauses(rule.tree)
+      except:
         try:
-            return c45_to_clauses(rule.tree)
+          return tree_to_clauses(rule.tree)
         except:
-            try:
-              return tree_to_clauses(rule.tree)
-            except:
-                pass
+          pass
     return []
 
 def sdrule_to_clauses(rule):
     from learners.cn2sd.rule import infinity
     ret = []
     for i, c in enumerate(rule.filter.conditions):
-        attr = rule.data.domain[c.position]
-        name = attr.name
-        # _logger.debug( "stringifying\t%s\t%s\t%s\t%s", c, type(c),
-        #                isinstance(c,  Orange.core.ValueFilter_continuous), attr.varType)
-        if isinstance(c, Orange.core.ValueFilter_continuous):
-            # XXX: rounding to the 3rd decimal place as a hack            
-            clause = []#'%s is not null' % name]
-            if c.min == c.max and c.min != -infinity:
-                v = math.floor(c.min * float(1e7)) / 1e7
-                vint = int(v)
-                vfloat = v - vint
-                v = vint + float(str(vfloat).rstrip('0.') or '0')
-                clause.append( 'abs(%s - %s) < 0.001' % (v, name) )
-            else:
-                if c.min != -infinity:
-                    clause.append( '%.7f <= %s' % (math.floor(c.min * float(1e7)) / 1e7, name) )
-                if c.max != infinity:
-                    clause.append( '%s <= %.7f ' % (name, math.ceil(c.max * float(1e7)) / 1e7) )
-            if clause:
-                ret.append( ' and '.join(clause) )
-        elif attr.varType == orange.VarTypes.Discrete:
-            if len(c.values) == 1:
-                val = attr.values[int(c.values[0])]
-            else:
-                val = [attr.values[int(v)] for v in c.values]
-                val = filter(lambda v: v != None, val)
-            ret.append( create_clause(name, val) )
+      attr = rule.data.domain[c.position]
+      name = attr.name
+      # _logger.debug( "stringifying\t%s\t%s\t%s\t%s", c, type(c),
+      #                isinstance(c,  Orange.core.ValueFilter_continuous), attr.varType)
+      if isinstance(c, Orange.core.ValueFilter_continuous):
+        # XXX: rounding to the 3rd decimal place as a hack            
+        clause = []#'%s is not null' % name]
+        if c.min == c.max and c.min != -infinity:
+          v = math.floor(c.min * float(1e7)) / 1e7
+          vint = int(v)
+          vfloat = v - vint
+          v = vint + float(str(vfloat).rstrip('0.') or '0')
+          clause.append( 'abs(%s - %s) < 0.001' % (v, name) )
+        else:
+          if c.min != -infinity:
+            clause.append( '%.7f <= %s' % (math.floor(c.min * float(1e7)) / 1e7, name) )
+          if c.max != infinity:
+            clause.append( '%s <= %.7f ' % (name, math.ceil(c.max * float(1e7)) / 1e7) )
+        if clause:
+          ret.append( ' and '.join(clause) )
+      elif attr.varType == orange.VarTypes.Discrete:
+        if len(c.values) == 1:
+          val = attr.values[int(c.values[0])]
+        else:
+          val = [attr.values[int(v)] for v in c.values]
+          val = filter(lambda v: v != None, val)
+        ret.append( create_clause(name, val) )
 
 
     return [ ' and '.join(ret) ]

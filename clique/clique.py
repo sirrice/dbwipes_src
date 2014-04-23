@@ -156,8 +156,7 @@ class CLIQUE(object):
         self.final_clusters.sort(key=lambda c: c.error, reverse=True)
         self.merge_cost = time.time() - start
 
-        final_rules = clusters_to_rules(self.final_clusters, 
-                self.cols, full_table)
+        final_rules = clusters_to_rules(self.final_clusters, full_table)
         print "\n============Besties==========="
         for rule in final_rules:
             print "%f\t%s" % (rule.quality, str(rule))
