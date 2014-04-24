@@ -219,7 +219,28 @@ class RangeMerger(Merger):
   
   @instrument
   def expand_dim(self, cur, dim, direction, g, seen):
-    if True or direction == 'disc':
+    if direction == 'disc':
+      cands = []
+      bests = set([cur])
+      prev_card = None
+      for cand in g:
+        #if prev_cand is None or prev_card == len(cand_discretes[dim]):
+        #  cands.append(cand)
+        #else:
+        #  nbests = len(bests)
+        #  bests.update(cands)
+        #  newbests, _ = self.get_frontier(bests)
+        #  if all([(c not in bests) for c in cands]):
+        #    break
+        bests.add(cand)
+        bests, _ = self.get_frontier(bests)
+        if cand not in bests:
+          seen.add(hash(cand))
+          if prev_card is not None and len(cand.discretes[dim]) != prev_card:
+            break
+        prev_card = len(cand.discretes[dim])
+      
+    else:
       cands = []
       bests = set([cur])
       for cand in g:
@@ -229,31 +250,25 @@ class RangeMerger(Merger):
           seen.add(hash(cand))
           break
       bests = [cur] + cands
-    else:
-      cands = list(g)
-      if len(cands) == 0:
-        return set([cur])
-      cands.append(cur)
-      frontier = self.get_frontier.get_frontier(cands)
-      bests = self.get_frontier.frontier_to_clusters(frontier)
 
-     
-    if direction == 'disc':
-      name = dim[:10]
-      s = ','.join([str(len(c.discretes[dim])) for c in bests])
-    else:
-      name = cur.cols[dim][:10]
-      if bests:
-        if direction == 'inc':
-          s = ','.join(["%.4f" % c.bbox[1][dim] for c in bests])
-          s = '%.4f - %s' % (bests[0].bbox[0][dim], s)
-        else:
-          s = ','.join(["%.4f" % c.bbox[0][dim] for c in bests])
-          s = '%s - %.4f' % (s, bests[0].bbox[1][dim])
+
+    if self.DEBUG:
+      if direction == 'disc':
+        name = dim[:10]
+        s = ','.join([str(len(c.discretes[dim])) for c in bests])
       else:
-        s = '---'
-    _logger.debug("\t%s\t%s\t%d candidates", name, direction, len(cands))
-    _logger.debug("\t%s\t%s\t%s", name, direction, s)
+        name = cur.cols[dim][:10]
+        if bests:
+          if direction == 'inc':
+            s = ','.join(["%.4f" % c.bbox[1][dim] for c in bests])
+            s = '%.4f - %s' % (bests[0].bbox[0][dim], s)
+          else:
+            s = ','.join(["%.4f" % c.bbox[0][dim] for c in bests])
+            s = '%s - %.4f' % (s, bests[0].bbox[1][dim])
+        else:
+          s = '---'
+      _logger.debug("\t%s\t%s\t%d candidates", name, direction, len(cands))
+      _logger.debug("\t%s\t%s\t%s", name, direction, s)
 
 
     return bests
@@ -321,6 +336,7 @@ class RangeMerger(Merger):
 
       cur_bests = frontier
       cur_bests.difference_update([cur])
+      _logger.debug("\t%d in frontier", len(cur_bests))
 
 
     if self.DEBUG:

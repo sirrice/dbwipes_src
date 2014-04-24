@@ -8,9 +8,15 @@ var canned_queries = {
     db: "intel"
 	},
 	fec12 : {
-    query: "SELECT sum(disb_amt), disb_dt as day FROM expenses_extradata WHERE (cand_id) = 'P80003338' GROUP BY day",
+    query: "SELECT sum(disb_amt), disb_dt FROM expenses_extradata WHERE (cand_id) = 'P80003338' GROUP BY disb_dt",
     db: "fec12"
-          } 
+  } ,
+  med: {
+    query: "SELECT sum(total_cost), ccm_payor FROM lqm group by ccm_payor",
+    db: "med"
+  }
+           
+
 };
 /*
 
@@ -26,13 +32,9 @@ var canned_queries = {
     query: "SELECT avg(rating), title FROM ratings WHERE adventure = 1 GROUP BY title",
     db: "movielens"
   },
-  med: {
-    query: "SELECT sum(total_cost), ccm_payor FROM lqm group by ccm_payor",
-    db: "med"
-  }
-           
 };
 */
+
 </script>
 
 

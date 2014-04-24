@@ -46,9 +46,60 @@ class Query(object):
             sql = '%s GROUP BY %s' % (sql, ','.join(self.group))
         if self.order:
             sql = '%s ORDER BY %s' % (sql, ','.join(self.order))
+        elif self.group:
+            sql = '%s ORDER BY %s' % (sql, ','.join(self.group))
         if self.limit is not None:
             sql = '%s LIMIT %s' % (sql, self.limit)
         return sql
+
+    def to_outer_join_sql(self, orig_where = []):
+      """
+      execute this query and preserve all groups that would have
+      existed if the WHERE clause were not present
+      """
+      if not self.group:
+        return str(self)
+
+      select = str(self.select)
+      fr = ','.join(self.fr)
+      filter_q = "SELECT * FROM %s" % fr
+      if self.where:
+        where = ' and '.join(self.where)
+        filter_q += " WHERE %s" % where
+
+      select_clause = self.select.coalesced_str()
+      groupby = ','.join(self.group)
+      if self.order:
+        orderby = ','.join(self.order)
+      else:
+        orderby = groupby
+
+      if orig_where:
+        orig_where = ' and '.join(orig_where)
+        orig_where = ' WHERE %s' % orig_where
+      else:
+        orig_where = ''
+
+      sql = """with bar as (%s)
+      select %s
+      from 
+        ((select distinct %s from %s %s) as foo
+          left outer join  
+        bar using (%s)) 
+      GROUP BY %s
+      ORDER BY %s;""" % (filter_q, select_clause, groupby, fr, orig_where, groupby, groupby, orderby)
+      print sql
+      return sql
+
+      """
+      with right as (select * from lqm where WHERECLAUSE)
+      select coalesce(sum(total_cost), 0), ccm_payor 
+      from 
+        ((select distinct ccm_payor from lqm) as payors 
+          left outer join  
+        right using (ccm_payor)) 
+      GROUP BY ccm_payor;
+      """
 
     def prettify(self):
         select = str(self.select)
@@ -116,6 +167,9 @@ class Select(list):
 
     def __str__(self):
         return ', '.join(map(str, self))
+
+    def coalesced_str(self):
+      return ', '.join([s.coalesced_str() for s in self])
         
     aggregates = property( lambda self: filter(lambda e: isinstance(e, SelectAgg), self) )
     aggs = property( lambda self: filter(lambda e: isinstance(e, SelectAgg), self) )    
@@ -143,6 +197,15 @@ class SelectAgg(object):
         if self.alias:
             s = '%s as %s' % (s, self.alias)
         return s
+
+    def coalesced_str(self):
+        s = "coalesce(%s, 0)" % self.expr
+        if self.alias:
+          s = "%s as %s" % (s, self.alias)
+        else:
+          s = "%s as %s" % (s, self.fname)
+        return s
+
     
 class SelectExpr(object):
     def __init__(self, alias, cols, expr, attr):
@@ -159,6 +222,8 @@ class SelectExpr(object):
             return '%s as %s' % (self.expr, self.alias)
         return self.expr
 
+    def coalesced_str(self):
+        return str(self)
 
 def _get_attrnames():
     cache = {}

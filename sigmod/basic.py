@@ -113,8 +113,6 @@ class Basic(object):
     self.cont_dists = dict(zip(attrnames, Orange.statistics.basic.Domain(self.full_table)))
     self.disc_dists = dict(zip(attrnames, Orange.statistics.distribution.Domain(self.full_table)))
 
-
-
   def __call__(self, full_table, bad_tables, good_tables, **kwargs):
     """
     table has been trimmed of extraneous columns.

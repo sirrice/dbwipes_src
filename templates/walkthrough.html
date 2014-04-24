@@ -56,6 +56,10 @@ submit
             <span class='link' onclick="$('#sb_schema').toggle()">attrs</span>
           </label>
           <div id="sb_schema" class="col-sm-9" style="display: none;">
+            <label class="checkbox">
+              <span class='link' onclick="$('.errattrs').get().forEach(function(e){e.checked=false;})">uncheck all</span>
+            </label>
+
             {% for attrname, type, checked in result_schema %}
               <label class="checkbox">
                 <input type="checkbox" checked class="errattrs" id="errattrs_{{attrname}}" value="{{attrname}}"/>

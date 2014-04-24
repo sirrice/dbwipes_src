@@ -42,12 +42,13 @@ def teardown_request(exception):
   except:
     pass
 
-def run_sql_query(sql, parsed):
+
+def run_sql_query(parsed, orig_where):
   ret = []
-  sql = str(parsed)
+  sql = parsed.to_outer_join_sql(orig_where)
   if g.monetdb:
     try:
-      res = g.db.execute("%s limit 0" % sql)
+      res = g.db.execute("%s limit 0" % str(parsed))
       keys = res.keys()
       res = g.monetdb.cursor()
       res.execute(sql)
@@ -196,10 +197,11 @@ def json_query():
     sql = request.form['query']
     where = request.form.get('filter', None)
     parsed = parse_sql(g.db, sql)
+    orig_where = list(parsed.where)
     if where:
       parsed.where.append(where)
     print str(parsed)[:200]
-    data = run_sql_query(sql, parsed)
+    data = run_sql_query(parsed, orig_where)
   except Exception as e:
     import traceback
     traceback.print_exc()
@@ -283,6 +285,7 @@ def debug():
           complexity_multiplier=4.5,
           l=0.9,
           max_wait=10,
+          DEBUG=True
         )
         cost = time.time() - start
         print "end to end took %.4f" % cost

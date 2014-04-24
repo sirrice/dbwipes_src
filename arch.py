@@ -407,39 +407,13 @@ class SharedObj(object):
 
 
 
-def create_clauses(sharedobj):
-    """
-    Convert clauses into SQL predicate strings
-    """
-    def filter_clause(clause):
-      if not clause:
-          return False
-      if len(clause) > 1000:
-          _logger.warn( "clause too long\t%d", len(clause))
-          return False
-      return True
-
-    for label, rules in sharedobj.rules.iteritems():
-      rules = map(lambda p: p[0], rules)
-      sharedobj.clauses[label] = []
-      for rule in rules:
-        clauses = rule_to_clauses(rule)
-        clause_str = ' or '.join(clauses)
-        sharedobj.clauses[label].append(clause_str)
-      #clauses = map(lambda rule:
-                    #' or '.join(rule_to_clauses(rule)),
-                    #rules)
-      
-      #sharedobj.clauses[label] = clauses
-
-
-
 
 def is_discrete(attr, col):
     if attr in [
-        'epochid', 'voltage', 'xloc', 'yloc', 
-        'est', 'height', 'width', 'atime', 'v', 'light', 'humidity',
-        'age', 'finan_icu_days']:
+      'epochid', 'voltage', 'xloc', 'yloc', 
+      'est', 'height', 'width', 'atime', 'v',
+      'light', 'humidity', 'age', 
+      'finan_icu_days', 'dxage']:
         return False
     if attr in ['recipient_zip', 'sensor', 'moteid' 'file_num']:
         return True
@@ -590,6 +564,37 @@ def merge_tables(tables):
     return ret
 
 
+
+
+
+def create_clauses(sharedobj):
+    """
+    Convert clauses into SQL predicate strings
+    """
+    def filter_clause(clause):
+      if not clause:
+          return False
+      if len(clause) > 1000:
+          _logger.warn( "clause too long\t%d", len(clause))
+          return False
+      return True
+
+    for label, rules in sharedobj.rules.iteritems():
+      rules = map(lambda p: p[0], rules)
+      sharedobj.clauses[label] = []
+      for rule in rules:
+        clauses = rule_to_clauses(rule)
+        clause_str = ' or '.join(clauses)
+        sharedobj.clauses[label].append(clause_str)
+      #clauses = map(lambda rule:
+                    #' or '.join(rule_to_clauses(rule)),
+                    #rules)
+      
+      #sharedobj.clauses[label] = clauses
+
+
+
+
 def rule_to_clauses(rule):
     try:
       return sdrule_to_clauses(rule)
@@ -615,20 +620,22 @@ def sdrule_to_clauses(rule):
         # XXX: rounding to the 3rd decimal place as a hack            
         clause = []#'%s is not null' % name]
         if c.min == c.max and c.min != -infinity:
-          v = math.floor(c.min * float(1e7)) / 1e7
+          v = round(c.min, 5)
           vint = int(v)
           vfloat = v - vint
           v = vint + float(str(vfloat).rstrip('0.') or '0')
           clause.append( 'abs(%s - %s) < 0.001' % (v, name) )
         else:
           if c.min != -infinity:
-            clause.append( '%.7f <= %s' % (math.floor(c.min * float(1e7)) / 1e7, name) )
+            clause.append( '%.7f <= %s' % (round(c.min, 5), name) )
           if c.max != infinity:
-            clause.append( '%s <= %.7f ' % (name, math.ceil(c.max * float(1e7)) / 1e7) )
+            clause.append( '%s <= %.7f ' % (name, round(c.max, 5)))
         if clause:
           ret.append( ' and '.join(clause) )
       elif attr.varType == orange.VarTypes.Discrete:
-        if len(c.values) == 1:
+        if len(c.values) == len(attr.values):
+          continue
+        elif len(c.values) == 1:
           val = attr.values[int(c.values[0])]
         else:
           val = [attr.values[int(v)] for v in c.values]

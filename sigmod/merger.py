@@ -250,6 +250,8 @@ class Merger(object):
       merged = cluster.clone()
       vals = set(vals)
       vals.update(merged.discretes.get(dim, ()))
+      if len(merged.discretes[dim]) == len(vals):
+        return None
       merged.discretes[dim] = vals
       if skip and hash(merged) in skip: 
         return None
@@ -258,7 +260,6 @@ class Merger(object):
       merged.error = self.influence(merged)
       merged.parents = [cluster]
       return merged
-
 
 
     def expand_candidates(self, cluster, seen=None):
@@ -326,6 +327,7 @@ class Merger(object):
         generator = (self.disc_merge(cluster, dim, disc)#, seen)
             for disc in sorted(discs, key=lambda d: len(d)))
         generator = ifilter(bool, generator)
+
         yield (dim, 'disc', generator)
 
     def create_filterer(self, cluster, reasons=None):
