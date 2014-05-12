@@ -329,6 +329,21 @@ function update_query(sql) {
 }
 
 
+var typed_value = function(val, typ) {
+  if (typ == 'time') {
+    val = "'" + val + "'::time";
+  } else if (typ == 'timestamp') {
+    val = "'" + val + "'::timestamp";
+  } else if (typ == 'date') {
+    val = "'" + val + "'::date";
+  } else if (_.contains(typ, "int") || _.contains(typ, "float")) {
+  } else {
+    val = "'" + val + "'";
+  }
+  return val;
+}
+
+
 //
 // Retrieve the aggregate query results for a given "dice" of the results
 // Caches results
@@ -380,6 +395,70 @@ var get_aggdata = (function(){
 })();
 
 
+var get_facet_data = (function(){
+  return function(db, query) {
+    if (!query) {
+      query = "";
+    }
+    var params = {
+      db: db,
+      query: query
+    };
+    $.post('/json/facets/', params, function(resp) {
+      if (resp && resp['col_datas']) {
+        render_facet_data(resp['col_datas']);
+      }
+    }, 'json');
+  };
+})();
+
+var render_facet_data = (function(){
+  var template = null; 
+  return function(col_datas) {
+    if (!template) {
+      template = Handlebars
+        .compile($('#facet-col-template').html());
+    }
+
+    _.each(col_datas, function(col_stats) {
+      console.log(col_stats);
+      var html = template(col_stats);
+      var el = $("<div>").html(html);
+      var span = el.find("#facet-"+col_stats['col']);
+      var hist_list = el.find("#hist-"+col_stats['col']);
+      span.click(function() {
+        hist_list.toggle()
+      });
+      hist_list.find("li").each(function(idx, li) {
+        var li = $(li);
+        var val = col_stats['hist'][idx].val;
+        val = typed_value(val, col_stats['typ']);
+        var where = "(" + col_stats['gb'] + ") = " + val;
+        var cachekey = col_stats['col'] + ':::' + val;
+
+        li.hover(
+          function() {
+            get_aggdata(
+              global_state.query, 
+              idx, 
+              where,
+              function(resp) {
+                var data = resp.data,
+                    query = resp.query;
+                render_data(data, labels, cachekey);
+              }
+            )
+          },
+          function() {
+            render_data(data, labels, global_state.original_query)
+          }
+        );
+      });
+      $("#facets").append(el);
+    })
+  }
+})();
+
 function render_schema(selector,schema) {
 	$(selector).empty();
 	var fsdiv = d3.select(selector);
@@ -411,6 +490,7 @@ function render_schema(selector,schema) {
 			.text(String)
 			.style("font-size", "smaller");						
 }
+
 
 
 

@@ -14,8 +14,12 @@ var canned_queries = {
   med: {
     query: "SELECT sum(total_cost), ccm_payor FROM lqm group by ccm_payor",
     db: "med"
+  },
+  bt: {
+    query: "SELECT week_start_date, avg(job_count), stddev(job_count) FROM sample group by week_start_date order by week_start_date",
+    db: "bt"
   }
-           
+            
 
 };
 /*

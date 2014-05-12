@@ -74,11 +74,10 @@ var clickedInfo = null;
         var clause = $("#clause_{{idx}}");
 
 				var cb_func = function(_resp) {	
-					var _data = _resp.data,
-              _labels = _resp.labels;
+					var _data = _resp.data;
           clause.removeClass("filter-loading")
 					$("#aggplot .loading-text").text('rendering...');
-					filter_click(_idx, _query, _where, _data);//, _labels);
+					filter_click(_idx, _query, _where, _data);
 					$("#aggplot .loading-text").empty();
 				};
         var _info = {query: _query, idx: _idx, where: _where, cb: cb_func.bind(this)};

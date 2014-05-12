@@ -172,6 +172,57 @@ def index():
         context['errormsg'] = str(e)
     return render_template('index.html', **context)
 
+
+@app.route('/json/facets/', methods=['POST', 'GET'])
+def json_facets():
+  data = {}
+
+  try:
+    db = request.form.get('db', None)
+    query = request.form.get('query', None)
+
+    try:
+      print query
+      parsed = parse_sql(g.db, query)
+      where = ' and '.join(parsed.where)
+      table = parsed.fr[0]
+    except:
+      where = ''
+      table = ''
+
+    from summary import Summary
+    s = Summary(g.db, table)
+    cols = s.get_columns()
+
+    # filter for non-agg and non-gb cols
+
+    typs = map(s.get_type, cols)
+    cardinalities = map(s.get_cardinality, cols)
+    groups = [s.get_col_groupby(*e) for e in zip(cols, typs)]
+    col_datas = []
+    for c,t,ca,gb in zip(cols, typs, cardinalities, groups):
+      print "col: %s" % c
+      if gb:
+        stats = s.get_group_stats(c,gb)
+        stats = [{'val': val, 'count': count} for (val,count) in stats]
+        el = {
+          'col': c,
+          'typ': t,
+          'card': ca,
+          'gb': gb,
+          'hist': stats
+        }
+        col_datas.append(el)
+
+    data = {
+      'col_datas': col_datas
+    }
+
+  except:
+    traceback.print_exc()
+
+  return json.dumps(data, default=json_handler)
+
     
 @app.route('/json/schema/', methods=["POST", "GET"])
 def json_schemas():
@@ -192,7 +243,7 @@ def json_schemas():
 
 @app.route('/json/query/', methods=["POST", "GET"])
 def json_query():
-  data_and_labels = {'data' : {}, 'labels' : {}}
+  ret = {'data' : {}, 'query':None};
   try:
     sql = request.form['query']
     where = request.form.get('filter', None)
@@ -202,10 +253,12 @@ def json_query():
       parsed.where.append(where)
     print str(parsed)[:200]
     data = run_sql_query(parsed, orig_where)
+    ret['data'] = data
+    ret['query'] = str(parsed)
   except Exception as e:
     import traceback
     traceback.print_exc()
-  return json.dumps({'data':data}, default=json_handler)
+  return json.dumps(ret, default=json_handler)
 
 @app.route('/json/filterq/', methods=["POST", "GET"])
 def json_filterq():

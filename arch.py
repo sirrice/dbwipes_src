@@ -133,7 +133,7 @@ def get_provenance_split(sharedobj, cols, keys):
 
 
 
-def extract_agg_vals(vals):
+def extract_agg_vals(vals, col_type):
     fmts = [
       '%Y-%m-%dT%H:%M:%S.%fZ',
       '%Y-%m-%dT%H:%M:%S.%f',
@@ -145,9 +145,9 @@ def extract_agg_vals(vals):
       try:
         ret = [datetime.strptime(val, fmt) for val in vals]
         print vals
-        if len(set([(d.hour, d.minute, d.second) for d in ret])) == 1:
+        if col_type == 'date':
           ret = [d.date() for d in ret]
-        else:
+        elif 'Z' in fmt:
           ret = [d - timedelta(hours=5) for d in ret] # compensate for 'Z' +4 timezone
 
         return ret
@@ -193,6 +193,9 @@ def parse_debug_args(db, form, dbname=None):
 		    erreqs = json.loads(form.get('erreq', '{}')) # only if error type == EQUALTO
       except:
         erreqs = {}
+
+    nonagg = qobj.select.nonaggs[0]
+    col_type = db_type(db, qobj.fr, nonagg.cols[0])
     
     errors = []
     for agg in qobj.select.aggregates:
@@ -206,9 +209,10 @@ def parse_debug_args(db, form, dbname=None):
             raise RuntimeError("errtype was EQUAL but number of erreq values (%d) != number of aggs (%d) for agg %s" % (len(erreq), len(data[label]), label))
           print "erreq for %s: %s" % (label, ', '.join(map(str,erreq)))
 
-        err = AggErr(agg, extract_agg_vals(data[label]), 20, errtype, {'erreq' : erreq})
+        bad_keys = extract_agg_vals(data[label], col_type)
+        err = AggErr(agg, bad_keys, 20, errtype, {'erreq' : erreq})
         errors.append(err)
-        obj.goodkeys[label] = extract_agg_vals(goodkeys.get(label, []))
+        obj.goodkeys[label] = extract_agg_vals(goodkeys.get(label, []), col_type)
 
     obj.errors = errors
     obj.dbname = dbname
